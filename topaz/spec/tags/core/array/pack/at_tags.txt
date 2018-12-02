@@ -1,0 +1,1 @@
+fails:Array#pack with format '@' extends the string with NULL bytes if the string size is less than the count

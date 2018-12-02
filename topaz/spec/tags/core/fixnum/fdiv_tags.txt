@@ -1,0 +1,3 @@
+fails:Fixnum#fdiv performs floating-point division between self and a Bignum
+fails:Fixnum#fdiv raises a TypeError when argument isn't numeric
+fails:Fixnum#fdiv follows the coercion protocol

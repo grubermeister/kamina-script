@@ -1,0 +1,10 @@
+fails:Array#pack with format 'Q' returns an ASCII-8BIT string
+fails:Array#pack with format 'q' returns an ASCII-8BIT string
+fails:Array#pack with format 'Q' with modifier '<' encodes the number of array elements specified by the count modifier
+fails:Array#pack with format 'Q' with modifier '<' encodes all remaining elements when passed the '*' modifier
+fails:Array#pack with format 'Q' with modifier '>' encodes all remaining elements when passed the '*' modifier
+fails:Array#pack with format 'q' with modifier '<' encodes the number of array elements specified by the count modifier
+fails:Array#pack with format 'q' with modifier '<' encodes all remaining elements when passed the '*' modifier
+fails:Array#pack with format 'q' with modifier '>' encodes all remaining elements when passed the '*' modifier
+fails:Array#pack with format 'Q' encodes all remaining elements when passed the '*' modifier
+fails:Array#pack with format 'q' encodes all remaining elements when passed the '*' modifier

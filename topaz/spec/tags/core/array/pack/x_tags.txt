@@ -1,0 +1,2 @@
+fails:Array#pack with format 'x' does not add a NULL byte when passed the '*' modifier
+fails:Array#pack with format 'X' has no affect when passed the '*' modifier

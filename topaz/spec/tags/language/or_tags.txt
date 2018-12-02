@@ -1,0 +1,1 @@
+fails:The or operator has a lower precedence than 'return' in 'return true or false'

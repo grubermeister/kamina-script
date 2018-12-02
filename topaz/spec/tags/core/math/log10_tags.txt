@@ -1,0 +1,1 @@
+fails:Math.log10 raises an Errno::EDOM if the argument is less than 0

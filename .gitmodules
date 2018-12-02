@@ -1,0 +1,4 @@
+[submodule "stackless"]
+	path = stackless
+	url = git@github.com:stackless-dev/stackless.git
+	branch = 2.7-slp

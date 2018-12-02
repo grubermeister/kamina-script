@@ -1,0 +1,2 @@
+fails:Kernel#methods does not return private singleton methods defined in 'class << self'
+fails:Kernel#methods returns the publicly accessible methods of the object
