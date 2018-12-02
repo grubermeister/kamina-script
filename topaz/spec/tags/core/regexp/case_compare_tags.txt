@@ -1,1 +1,0 @@
-fails:Regexp#=== returns false if the other value cannot be coerced to a string

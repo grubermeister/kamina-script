@@ -1,0 +1,1438 @@
+"""Core implementation of import.
+
+This module is NOT meant to be directly imported! It has been designed such
+that it can be bootstrapped into Python as the implementation of import. As
+such it requires the injection of specific modules and attributes in order to
+work. One should use importlib as the public-facing version of this module.
+
+"""
+#
+# IMPORTANT: Whenever making changes to this module, be sure to run
+# a top-level make in order to get the frozen version of the module
+# updated. Not doing so will result in the Makefile to fail for
+# all others who don't have a ./python around to freeze the module
+# in the early stages of compilation.
+#
+
+# See importlib._setup() for what is injected into the global namespace.
+
+# When editing this code be aware that code executed at import time CANNOT
+# reference any injected objects! This includes not only global code but also
+# anything specified at the class level.
+
+# Bootstrap-related code ######################################################
+
+_bootstrap_external = None
+
+def _wrap(new, old):
+    """Simple substitute for functools.update_wrapper."""
+    for replace in ['__module__', '__name__', '__qualname__', '__doc__']:
+        if hasattr(old, replace):
+            setattr(new, replace, getattr(old, replace))
+    new.__dict__.update(old.__dict__)
+
+
+def _new_module(name):
+    return type(sys)(name)
+
+
+class _ManageReload:
+
+    """Manages the possible clean-up of sys.modules for load_module()."""
+
+    def __init__(self, name):
+        self._name = name
+
+    def __enter__(self):
+        self._is_reload = self._name in sys.modules
+
+    def __exit__(self, *args):
+        if any(arg is not None for arg in args) and not self._is_reload:
+            try:
+                del sys.modules[self._name]
+            except KeyError:
+                pass
+
+# Module-level locking ########################################################
+
+# A dict mapping module names to weakrefs of _ModuleLock instances
+_module_locks = {}
+# A dict mapping thread ids to _ModuleLock instances
+_blocking_on = {}
+
+
+class _DeadlockError(RuntimeError):
+    pass
+
+
+class _ModuleLock:
+    """A recursive lock implementation which is able to detect deadlocks
+    (e.g. thread 1 trying to take locks A then B, and thread 2 trying to
+    take locks B then A).
+    """
+
+    def __init__(self, name):
+        self.lock = _thread.allocate_lock()
+        self.wakeup = _thread.allocate_lock()
+        self.name = name
+        self.owner = None
+        self.count = 0
+        self.waiters = 0
+
+    def has_deadlock(self):
+        # Deadlock avoidance for concurrent circular imports.
+        me = _thread.get_ident()
+        tid = self.owner
+        while True:
+            lock = _blocking_on.get(tid)
+            if lock is None:
+                return False
+            tid = lock.owner
+            if tid == me:
+                return True
+
+    def acquire(self):
+        """
+        Acquire the module lock.  If a potential deadlock is detected,
+        a _DeadlockError is raised.
+        Otherwise, the lock is always acquired and True is returned.
+        """
+        tid = _thread.get_ident()
+        _blocking_on[tid] = self
+        try:
+            while True:
+                with self.lock:
+                    if self.count == 0 or self.owner == tid:
+                        self.owner = tid
+                        self.count += 1
+                        return True
+                    if self.has_deadlock():
+                        raise _DeadlockError('deadlock detected by %r' % self)
+                    if self.wakeup.acquire(False):
+                        self.waiters += 1
+                # Wait for a release() call
+                self.wakeup.acquire()
+                self.wakeup.release()
+        finally:
+            del _blocking_on[tid]
+
+    def release(self):
+        tid = _thread.get_ident()
+        with self.lock:
+            if self.owner != tid:
+                raise RuntimeError('cannot release un-acquired lock')
+            assert self.count > 0
+            self.count -= 1
+            if self.count == 0:
+                self.owner = None
+                if self.waiters:
+                    self.waiters -= 1
+                    self.wakeup.release()
+
+    def __repr__(self):
+        return '_ModuleLock({!r}) at {}'.format(self.name, id(self))
+
+
+class _DummyModuleLock:
+    """A simple _ModuleLock equivalent for Python builds without
+    multi-threading support."""
+
+    def __init__(self, name):
+        self.name = name
+        self.count = 0
+
+    def acquire(self):
+        self.count += 1
+        return True
+
+    def release(self):
+        if self.count == 0:
+            raise RuntimeError('cannot release un-acquired lock')
+        self.count -= 1
+
+    def __repr__(self):
+        return '_DummyModuleLock({!r}) at {}'.format(self.name, id(self))
+
+
+class _ModuleLockManager:
+
+    def __init__(self, name):
+        self._name = name
+        self._lock = None
+
+    def __enter__(self):
+        try:
+            self._lock = _get_module_lock(self._name)
+        finally:
+            _imp.release_lock()
+        self._lock.acquire()
+
+    def __exit__(self, *args, **kwargs):
+        self._lock.release()
+
+
+# The following two functions are for consumption by Python/import.c.
+
+def _get_module_lock(name):
+    """Get or create the module lock for a given module name.
+
+    Should only be called with the import lock taken."""
+    lock = None
+    try:
+        lock = _module_locks[name]()
+    except KeyError:
+        pass
+    if lock is None:
+        if _thread is None:
+            lock = _DummyModuleLock(name)
+        else:
+            lock = _ModuleLock(name)
+        def cb(wr):
+            if _module_locks.get(name) is wr:    # XXX PyPy fix?
+                del _module_locks[name]
+        _module_locks[name] = _weakref.ref(lock, cb)
+    return lock
+
+def _lock_unlock_module(name):
+    """Release the global import lock, and acquires then release the
+    module lock for a given module name.
+    This is used to ensure a module is completely initialized, in the
+    event it is being imported by another thread.
+
+    Should only be called with the import lock taken."""
+    lock = _get_module_lock(name)
+    _imp.release_lock()
+    try:
+        lock.acquire()
+    except _DeadlockError:
+        # Concurrent circular import, we'll accept a partially initialized
+        # module object.
+        pass
+    else:
+        lock.release()
+
+# Frame stripping magic ###############################################
+def _call_with_frames_removed(f, *args, **kwds):
+    """remove_importlib_frames in import.c will always remove sequences
+    of importlib frames that end with a call to this function
+
+    Use it instead of a normal call in places where including the importlib
+    frames introduces unwanted noise into the traceback (e.g. when executing
+    module code)
+    """
+    return f(*args, **kwds)
+
+
+def _verbose_message(message, *args, verbosity=1):
+    """Print the message to stderr if -v/PYTHONVERBOSE is turned on."""
+    if sys.flags.verbose >= verbosity:
+        if not message.startswith(('#', 'import ')):
+            message = '# ' + message
+        print(message.format(*args), file=sys.stderr)
+
+
+def _requires_builtin(fxn):
+    """Decorator to verify the named module is built-in."""
+    def _requires_builtin_wrapper(self, fullname):
+        if fullname not in sys.builtin_module_names:
+            raise ImportError('{!r} is not a built-in module'.format(fullname),
+                              name=fullname)
+        return fxn(self, fullname)
+    _wrap(_requires_builtin_wrapper, fxn)
+    return _requires_builtin_wrapper
+
+
+def _requires_frozen(fxn):
+    """Decorator to verify the named module is frozen."""
+    def _requires_frozen_wrapper(self, fullname):
+        if not _imp.is_frozen(fullname):
+            raise ImportError('{!r} is not a frozen module'.format(fullname),
+                              name=fullname)
+        return fxn(self, fullname)
+    _wrap(_requires_frozen_wrapper, fxn)
+    return _requires_frozen_wrapper
+
+
+# Typically used by loader classes as a method replacement.
+def _load_module_shim(self, fullname):
+    """Load the specified module into sys.modules and return it.
+
+    This method is deprecated.  Use loader.exec_module instead.
+
+    """
+    spec = spec_from_loader(fullname, self)
+    if fullname in sys.modules:
+        module = sys.modules[fullname]
+        _exec(spec, module)
+        return sys.modules[fullname]
+    else:
+        return _load(spec)
+
+# Module specifications #######################################################
+
+def _module_repr(module):
+    # The implementation of ModuleType__repr__().
+    loader = getattr(module, '__loader__', None)
+    if hasattr(loader, 'module_repr'):
+        # As soon as BuiltinImporter, FrozenImporter, and NamespaceLoader
+        # drop their implementations for module_repr. we can add a
+        # deprecation warning here.
+        try:
+            return loader.module_repr(module)
+        except Exception:
+            pass
+    try:
+        spec = module.__spec__
+    except AttributeError:
+        pass
+    else:
+        if spec is not None:
+            return _module_repr_from_spec(spec)
+
+    # We could use module.__class__.__name__ instead of 'module' in the
+    # various repr permutations.
+    try:
+        name = module.__name__
+    except AttributeError:
+        name = '?'
+    try:
+        filename = module.__file__
+    except AttributeError:
+        if loader is None:
+            return '<module {!r}>'.format(name)
+        else:
+            return '<module {!r} ({!r})>'.format(name, loader)
+    else:
+        return '<module {!r} from {!r}>'.format(name, filename)
+
+
+class _installed_safely:
+
+    def __init__(self, module):
+        self._module = module
+        self._spec = module.__spec__
+
+    def __enter__(self):
+        # This must be done before putting the module in sys.modules
+        # (otherwise an optimization shortcut in import.c becomes
+        # wrong)
+        self._spec._initializing = True
+        sys.modules[self._spec.name] = self._module
+
+    def __exit__(self, *args):
+        try:
+            spec = self._spec
+            if any(arg is not None for arg in args):
+                try:
+                    del sys.modules[spec.name]
+                except KeyError:
+                    pass
+            else:
+                _verbose_message('import {!r} # {!r}', spec.name, spec.loader)
+        finally:
+            self._spec._initializing = False
+
+
+class ModuleSpec:
+    """The specification for a module, used for loading.
+
+    A module's spec is the source for information about the module.  For
+    data associated with the module, including source, use the spec's
+    loader.
+
+    `name` is the absolute name of the module.  `loader` is the loader
+    to use when loading the module.  `parent` is the name of the
+    package the module is in.  The parent is derived from the name.
+
+    `is_package` determines if the module is considered a package or
+    not.  On modules this is reflected by the `__path__` attribute.
+
+    `origin` is the specific location used by the loader from which to
+    load the module, if that information is available.  When filename is
+    set, origin will match.
+
+    `has_location` indicates that a spec's "origin" reflects a location.
+    When this is True, `__file__` attribute of the module is set.
+
+    `cached` is the location of the cached bytecode file, if any.  It
+    corresponds to the `__cached__` attribute.
+
+    `submodule_search_locations` is the sequence of path entries to
+    search when importing submodules.  If set, is_package should be
+    True--and False otherwise.
+
+    Packages are simply modules that (may) have submodules.  If a spec
+    has a non-None value in `submodule_search_locations`, the import
+    system will consider modules loaded from the spec as packages.
+
+    Only finders (see importlib.abc.MetaPathFinder and
+    importlib.abc.PathEntryFinder) should modify ModuleSpec instances.
+
+    """
+
+    def __init__(self, name, loader, *, origin=None, loader_state=None,
+                 is_package=None):
+        self.name = name
+        self.loader = loader
+        self.origin = origin
+        self.loader_state = loader_state
+        self.submodule_search_locations = [] if is_package else None
+
+        # file-location attributes
+        self._set_fileattr = False
+        self._cached = None
+
+    def __repr__(self):
+        args = ['name={!r}'.format(self.name),
+                'loader={!r}'.format(self.loader)]
+        if self.origin is not None:
+            args.append('origin={!r}'.format(self.origin))
+        if self.submodule_search_locations is not None:
+            args.append('submodule_search_locations={}'
+                        .format(self.submodule_search_locations))
+        return '{}({})'.format(self.__class__.__name__, ', '.join(args))
+
+    def __eq__(self, other):
+        smsl = self.submodule_search_locations
+        try:
+            return (self.name == other.name and
+                    self.loader == other.loader and
+                    self.origin == other.origin and
+                    smsl == other.submodule_search_locations and
+                    self.cached == other.cached and
+                    self.has_location == other.has_location)
+        except AttributeError:
+            return False
+
+    @property
+    def cached(self):
+        if self._cached is None:
+            if self.origin is not None and self._set_fileattr:
+                if _bootstrap_external is None:
+                    raise NotImplementedError
+                self._cached = _bootstrap_external._get_cached(self.origin)
+        return self._cached
+
+    @cached.setter
+    def cached(self, cached):
+        self._cached = cached
+
+    @property
+    def parent(self):
+        """The name of the module's parent."""
+        if self.submodule_search_locations is None:
+            return self.name.rpartition('.')[0]
+        else:
+            return self.name
+
+    @property
+    def has_location(self):
+        return self._set_fileattr
+
+    @has_location.setter
+    def has_location(self, value):
+        self._set_fileattr = bool(value)
+
+
+def spec_from_loader(name, loader, *, origin=None, is_package=None):
+    """Return a module spec based on various loader methods."""
+    if hasattr(loader, 'get_filename'):
+        if _bootstrap_external is None:
+            raise NotImplementedError
+        spec_from_file_location = _bootstrap_external.spec_from_file_location
+
+        if is_package is None:
+            return spec_from_file_location(name, loader=loader)
+        search = [] if is_package else None
+        return spec_from_file_location(name, loader=loader,
+                                       submodule_search_locations=search)
+
+    if is_package is None:
+        if hasattr(loader, 'is_package'):
+            try:
+                is_package = loader.is_package(name)
+            except ImportError:
+                is_package = None  # aka, undefined
+        else:
+            # the default
+            is_package = False
+
+    return ModuleSpec(name, loader, origin=origin, is_package=is_package)
+
+
+_POPULATE = object()
+
+
+def _spec_from_module(module, loader=None, origin=None):
+    # This function is meant for use in _setup().
+    try:
+        spec = module.__spec__
+    except AttributeError:
+        pass
+    else:
+        if spec is not None:
+            return spec
+
+    name = module.__name__
+    if loader is None:
+        try:
+            loader = module.__loader__
+        except AttributeError:
+            # loader will stay None.
+            pass
+    try:
+        location = module.__file__
+    except AttributeError:
+        location = None
+    if origin is None:
+        if location is None:
+            try:
+                origin = loader._ORIGIN
+            except AttributeError:
+                origin = None
+        else:
+            origin = location
+    try:
+        cached = module.__cached__
+    except AttributeError:
+        cached = None
+    try:
+        submodule_search_locations = list(module.__path__)
+    except AttributeError:
+        submodule_search_locations = None
+
+    spec = ModuleSpec(name, loader, origin=origin)
+    spec._set_fileattr = False if location is None else True
+    spec.cached = cached
+    spec.submodule_search_locations = submodule_search_locations
+    return spec
+
+
+def _init_module_attrs(spec, module, *, override=False):
+    # The passed-in module may be not support attribute assignment,
+    # in which case we simply don't set the attributes.
+    # __name__
+    if (override or getattr(module, '__name__', None) is None):
+        try:
+            module.__name__ = spec.name
+        except AttributeError:
+            pass
+    # __loader__
+    if override or getattr(module, '__loader__', None) is None:
+        loader = spec.loader
+        if loader is None:
+            # A backward compatibility hack.
+            if spec.submodule_search_locations is not None:
+                if _bootstrap_external is None:
+                    raise NotImplementedError
+                _NamespaceLoader = _bootstrap_external._NamespaceLoader
+
+                loader = _NamespaceLoader.__new__(_NamespaceLoader)
+                loader._path = spec.submodule_search_locations
+        try:
+            module.__loader__ = loader
+        except AttributeError:
+            pass
+    # __package__
+    if override or getattr(module, '__package__', None) is None:
+        try:
+            module.__package__ = spec.parent
+        except AttributeError:
+            pass
+    # __spec__
+    try:
+        module.__spec__ = spec
+    except AttributeError:
+        pass
+    # __path__
+    if override or getattr(module, '__path__', None) is None:
+        if spec.submodule_search_locations is not None:
+            try:
+                module.__path__ = spec.submodule_search_locations
+            except AttributeError:
+                pass
+    # __file__/__cached__
+    if spec.has_location:
+        if override or getattr(module, '__file__', None) is None:
+            try:
+                module.__file__ = spec.origin
+            except AttributeError:
+                pass
+
+        if override or getattr(module, '__cached__', None) is None:
+            if spec.cached is not None:
+                try:
+                    module.__cached__ = spec.cached
+                except AttributeError:
+                    pass
+    return module
+
+
+def module_from_spec(spec):
+    """Create a module based on the provided spec."""
+    # Typically loaders will not implement create_module().
+    module = None
+    if hasattr(spec.loader, 'create_module'):
+        # If create_module() returns `None` then it means default
+        # module creation should be used.
+        module = spec.loader.create_module(spec)
+    elif hasattr(spec.loader, 'exec_module'):
+        _warnings.warn('starting in Python 3.6, loaders defining exec_module() '
+                       'must also define create_module()',
+                       DeprecationWarning, stacklevel=2)
+    if module is None:
+        module = _new_module(spec.name)
+    _init_module_attrs(spec, module)
+    return module
+
+
+def _module_repr_from_spec(spec):
+    """Return the repr to use for the module."""
+    # We mostly replicate _module_repr() using the spec attributes.
+    name = '?' if spec.name is None else spec.name
+    if spec.origin is None:
+        if spec.loader is None:
+            return '<module {!r}>'.format(name)
+        else:
+            return '<module {!r} ({!r})>'.format(name, spec.loader)
+    else:
+        if spec.has_location:
+            return '<module {!r} from {!r}>'.format(name, spec.origin)
+        else:
+            return '<module {!r} ({})>'.format(spec.name, spec.origin)
+
+
+# Used by importlib.reload() and _load_module_shim().
+def _exec(spec, module):
+    """Execute the spec in an existing module's namespace."""
+    name = spec.name
+    _imp.acquire_lock()
+    with _ModuleLockManager(name):
+        if sys.modules.get(name) is not module:
+            msg = 'module {!r} not in sys.modules'.format(name)
+            raise ImportError(msg, name=name)
+        if spec.loader is None:
+            if spec.submodule_search_locations is None:
+                raise ImportError('missing loader', name=spec.name)
+            # namespace package
+            _init_module_attrs(spec, module, override=True)
+            return module
+        _init_module_attrs(spec, module, override=True)
+        if not hasattr(spec.loader, 'exec_module'):
+            # (issue19713) Once BuiltinImporter and ExtensionFileLoader
+            # have exec_module() implemented, we can add a deprecation
+            # warning here.
+            spec.loader.load_module(name)
+        else:
+            spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def _load_backward_compatible(spec):
+    # (issue19713) Once BuiltinImporter and ExtensionFileLoader
+    # have exec_module() implemented, we can add a deprecation
+    # warning here.
+    spec.loader.load_module(spec.name)
+    # The module must be in sys.modules at this point!
+    module = sys.modules[spec.name]
+    if getattr(module, '__loader__', None) is None:
+        try:
+            module.__loader__ = spec.loader
+        except AttributeError:
+            pass
+    if getattr(module, '__package__', None) is None:
+        try:
+            # Since module.__path__ may not line up with
+            # spec.submodule_search_paths, we can't necessarily rely
+            # on spec.parent here.
+            module.__package__ = module.__name__
+            if not hasattr(module, '__path__'):
+                module.__package__ = spec.name.rpartition('.')[0]
+        except AttributeError:
+            pass
+    if getattr(module, '__spec__', None) is None:
+        try:
+            module.__spec__ = spec
+        except AttributeError:
+            pass
+    return module
+
+def _load_unlocked(spec):
+    # A helper for direct use by the import system.
+    if spec.loader is not None:
+        # not a namespace package
+        if not hasattr(spec.loader, 'exec_module'):
+            return _load_backward_compatible(spec)
+
+    module = module_from_spec(spec)
+    with _installed_safely(module):
+        if spec.loader is None:
+            if spec.submodule_search_locations is None:
+                raise ImportError('missing loader', name=spec.name)
+            # A namespace package so do nothing.
+        else:
+            spec.loader.exec_module(module)
+
+    # We don't ensure that the import-related module attributes get
+    # set in the sys.modules replacement case.  Such modules are on
+    # their own.
+    return sys.modules[spec.name]
+
+# A method used during testing of _load_unlocked() and by
+# _load_module_shim().
+def _load(spec):
+    """Return a new module object, loaded by the spec's loader.
+
+    The module is not added to its parent.
+
+    If a module is already in sys.modules, that existing module gets
+    clobbered.
+
+    """
+    _imp.acquire_lock()
+    with _ModuleLockManager(spec.name):
+        return _load_unlocked(spec)
+
+
+# Loaders #####################################################################
+
+class BuiltinImporter:
+
+    """Meta path import for built-in modules.
+
+    All methods are either class or static methods to avoid the need to
+    instantiate the class.
+
+    """
+
+    @staticmethod
+    def module_repr(module):
+        """Return repr for the module.
+
+        The method is deprecated.  The import machinery does the job itself.
+
+        """
+        return '<module {!r} (built-in)>'.format(module.__name__)
+
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if path is not None:
+            return None
+        if _imp.is_builtin(fullname):
+            return spec_from_loader(fullname, cls, origin='built-in')
+        else:
+            return None
+
+    @classmethod
+    def find_module(cls, fullname, path=None):
+        """Find the built-in module.
+
+        If 'path' is ever specified then the search is considered a failure.
+
+        This method is deprecated.  Use find_spec() instead.
+
+        """
+        spec = cls.find_spec(fullname, path)
+        return spec.loader if spec is not None else None
+
+    @classmethod
+    def create_module(self, spec):
+        """Create a built-in module"""
+        if spec.name not in sys.builtin_module_names:
+            raise ImportError('{!r} is not a built-in module'.format(spec.name),
+                              name=spec.name)
+        return _call_with_frames_removed(_imp.create_builtin, spec)
+
+    @classmethod
+    def exec_module(self, module):
+        """Exec a built-in module"""
+        _call_with_frames_removed(_imp.exec_builtin, module)
+
+    @classmethod
+    @_requires_builtin
+    def get_code(cls, fullname):
+        """Return None as built-in modules do not have code objects."""
+        return None
+
+    @classmethod
+    @_requires_builtin
+    def get_source(cls, fullname):
+        """Return None as built-in modules do not have source code."""
+        return None
+
+    @classmethod
+    @_requires_builtin
+    def is_package(cls, fullname):
+        """Return False as built-in modules are never packages."""
+        return False
+
+    load_module = classmethod(_load_module_shim)
+
+
+class FrozenImporter:
+
+    """Meta path import for frozen modules.
+
+    All methods are either class or static methods to avoid the need to
+    instantiate the class.
+
+    """
+
+    @staticmethod
+    def module_repr(m):
+        """Return repr for the module.
+
+        The method is deprecated.  The import machinery does the job itself.
+
+        """
+        return '<module {!r} (frozen)>'.format(m.__name__)
+
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if _imp.is_frozen(fullname):
+            return spec_from_loader(fullname, cls, origin='frozen')
+        else:
+            return None
+
+    @classmethod
+    def find_module(cls, fullname, path=None):
+        """Find a frozen module.
+
+        This method is deprecated.  Use find_spec() instead.
+
+        """
+        return cls if _imp.is_frozen(fullname) else None
+
+    @classmethod
+    def create_module(cls, spec):
+        """Use default semantics for module creation."""
+
+    @staticmethod
+    def exec_module(module):
+        name = module.__spec__.name
+        if not _imp.is_frozen(name):
+            raise ImportError('{!r} is not a frozen module'.format(name),
+                              name=name)
+        code = _call_with_frames_removed(_imp.get_frozen_object, name)
+        exec(code, module.__dict__)
+
+    @classmethod
+    def load_module(cls, fullname):
+        """Load a frozen module.
+
+        This method is deprecated.  Use exec_module() instead.
+
+        """
+        return _load_module_shim(cls, fullname)
+
+    @classmethod
+    @_requires_frozen
+    def get_code(cls, fullname):
+        """Return the code object for the frozen module."""
+        return _imp.get_frozen_object(fullname)
+
+    @classmethod
+    @_requires_frozen
+    def get_source(cls, fullname):
+        """Return None as frozen modules do not have source code."""
+        return None
+
+    @classmethod
+    @_requires_frozen
+    def is_package(cls, fullname):
+        """Return True if the frozen module is a package."""
+        return _imp.is_frozen_package(fullname)
+
+
+# Import itself ###############################################################
+
+class _ImportLockContext:
+
+    """Context manager for the import lock."""
+
+    def __enter__(self):
+        """Acquire the import lock."""
+        _imp.acquire_lock()
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        """Release the import lock regardless of any raised exceptions."""
+        _imp.release_lock()
+
+
+def _resolve_name(name, package, level):
+    """Resolve a relative module name to an absolute one."""
+    bits = package.rsplit('.', level - 1)
+    if len(bits) < level:
+        raise ValueError('attempted relative import beyond top-level package')
+    base = bits[0]
+    return '{}.{}'.format(base, name) if name else base
+
+
+def _find_spec_legacy(finder, name, path):
+    # This would be a good place for a DeprecationWarning if
+    # we ended up going that route.
+    loader = finder.find_module(name, path)
+    if loader is None:
+        return None
+    return spec_from_loader(name, loader)
+
+
+def _find_spec(name, path, target=None):
+    """Find a module's loader."""
+    if sys.meta_path is not None and not sys.meta_path:
+        _warnings.warn('sys.meta_path is empty', ImportWarning)
+    # We check sys.modules here for the reload case.  While a passed-in
+    # target will usually indicate a reload there is no guarantee, whereas
+    # sys.modules provides one.
+    is_reload = name in sys.modules
+    for finder in sys.meta_path:
+        with _ImportLockContext():
+            try:
+                find_spec = finder.find_spec
+            except AttributeError:
+                spec = _find_spec_legacy(finder, name, path)
+                if spec is None:
+                    continue
+            else:
+                spec = find_spec(name, path, target)
+        if spec is not None:
+            # The parent import may have already imported this module.
+            if not is_reload and name in sys.modules:
+                module = sys.modules[name]
+                try:
+                    __spec__ = module.__spec__
+                except AttributeError:
+                    # We use the found spec since that is the one that
+                    # we would have used if the parent module hadn't
+                    # beaten us to the punch.
+                    return spec
+                else:
+                    if __spec__ is None:
+                        return spec
+                    else:
+                        return __spec__
+            else:
+                return spec
+    else:
+        return None
+
+
+def _sanity_check(name, package, level):
+    """Verify arguments are "sane"."""
+    if not isinstance(name, str):
+        raise TypeError('module name must be str, not {}'.format(type(name)))
+    if level < 0:
+        raise ValueError('level must be >= 0')
+    if level > 0:
+        if not isinstance(package, str):
+            raise TypeError('__package__ not set to a string')
+        elif package not in sys.modules:
+            msg = ('Parent module {!r} not loaded, cannot perform relative '
+                   'import')
+            raise SystemError(msg.format(package))
+    if not name and level == 0:
+        raise ValueError('Empty module name')
+
+
+_ERR_MSG_PREFIX = 'No module named '
+_ERR_MSG = _ERR_MSG_PREFIX + '{!r}'
+
+def _find_and_load_unlocked(name, import_):
+    path = None
+    parent = name.rpartition('.')[0]
+    if parent:
+        if parent not in sys.modules:
+            _call_with_frames_removed(import_, parent)
+        # Crazy side-effects!
+        if name in sys.modules:
+            return sys.modules[name]
+        parent_module = sys.modules[parent]
+        try:
+            path = parent_module.__path__
+        except AttributeError:
+            msg = (_ERR_MSG + '; {!r} is not a package').format(name, parent)
+            raise ImportError(msg, name=name) from None
+    spec = _find_spec(name, path)
+    if spec is None:
+        raise ImportError(_ERR_MSG.format(name), name=name)
+    else:
+        module = _load_unlocked(spec)
+    if parent:
+        # Set the module as an attribute on its parent.
+        parent_module = sys.modules[parent]
+        setattr(parent_module, name.rpartition('.')[2], module)
+    return module
+
+
+def _find_and_load(name, import_):
+    """Find and load the module, and release the import lock."""
+    with _ModuleLockManager(name):
+        return _find_and_load_unlocked(name, import_)
+
+
+def _gcd_import(name, package=None, level=0):
+    """Import and return the module based on its name, the package the call is
+    being made from, and the level adjustment.
+
+    This function represents the greatest common denominator of functionality
+    between import_module and __import__. This includes setting __package__ if
+    the loader did not.
+
+    """
+    _sanity_check(name, package, level)
+    if level > 0:
+        name = _resolve_name(name, package, level)
+    _imp.acquire_lock()
+    if name not in sys.modules:
+        return _find_and_load(name, _gcd_import)
+    module = sys.modules[name]
+    if module is None:
+        _imp.release_lock()
+        message = ('import of {} halted; '
+                   'None in sys.modules'.format(name))
+        raise ImportError(message, name=name)
+    _lock_unlock_module(name)
+    return module
+
+def _handle_fromlist(module, fromlist, import_):
+    """Figure out what __import__ should return.
+
+    The import_ parameter is a callable which takes the name of module to
+    import. It is required to decouple the function from assuming importlib's
+    import implementation is desired.
+
+    """
+    # The hell that is fromlist ...
+    # If a package was imported, try to import stuff from fromlist.
+    if hasattr(module, '__path__'):
+        if '*' in fromlist:
+            fromlist = list(fromlist)
+            fromlist.remove('*')
+            if hasattr(module, '__all__'):
+                fromlist.extend(module.__all__)
+        for x in fromlist:
+            if not hasattr(module, x):
+                from_name = '{}.{}'.format(module.__name__, x)
+                try:
+                    _call_with_frames_removed(import_, from_name)
+                except ImportError as exc:
+                    # Backwards-compatibility dictates we ignore failed
+                    # imports triggered by fromlist for modules that don't
+                    # exist.
+                    if str(exc).startswith(_ERR_MSG_PREFIX):
+                        if exc.name == from_name:
+                            continue
+                    raise
+    return module
+
+
+def _calc___package__(globals):
+    """Calculate what __package__ should be.
+
+    __package__ is not guaranteed to be defined or could be set to None
+    to represent that its proper value is unknown.
+
+    """
+    package = globals.get('__package__')
+    if package is None:
+        package = globals['__name__']
+        if '__path__' not in globals:
+            package = package.rpartition('.')[0]
+    return package
+
+
+def __import__(name, globals=None, locals=None, fromlist=(), level=0):
+    """Import a module.
+
+    The 'globals' argument is used to infer where the import is occurring from
+    to handle relative imports. The 'locals' argument is ignored. The
+    'fromlist' argument specifies what should exist as attributes on the module
+    being imported (e.g. ``from module import <fromlist>``).  The 'level'
+    argument represents the package location to import from in a relative
+    import (e.g. ``from ..pkg import mod`` would have a 'level' of 2).
+
+    """
+    if level == 0:
+        module = _gcd_import(name)
+    else:
+        globals_ = globals if globals is not None else {}
+        package = _calc___package__(globals_)
+        module = _gcd_import(name, package, level)
+    if not fromlist:
+        # Return up to the first dot in 'name'. This is complicated by the fact
+        # that 'name' may be relative.
+        if level == 0:
+            return _gcd_import(name.partition('.')[0])
+        elif not name:
+            return module
+        else:
+            # Figure out where to slice the module's name up to the first dot
+            # in 'name'.
+            cut_off = len(name) - len(name.partition('.')[0])
+            # Slice end needs to be positive to alleviate need to special-case
+            # when ``'.' not in name``.
+            return sys.modules[module.__name__[:len(module.__name__)-cut_off]]
+    else:
+        return _handle_fromlist(module, fromlist, _gcd_import)
+
+
+def _builtin_from_name(name):
+    spec = BuiltinImporter.find_spec(name)
+    if spec is None:
+        raise ImportError('no built-in module named ' + name)
+    return _load_unlocked(spec)
+
+
+def _setup(sys_module, _imp_module):
+    """Setup importlib by importing needed built-in modules and injecting them
+    into the global namespace.
+
+    As sys is needed for sys.modules access and _imp is needed to load built-in
+    modules, those two modules must be explicitly passed in.
+
+    """
+    global _imp, sys
+    _imp = _imp_module
+    sys = sys_module
+
+    # Set up the spec for existing builtin/frozen modules.
+    module_type = type(sys)
+    for name, module in sys.modules.items():
+        if isinstance(module, module_type):
+            if name in sys.builtin_module_names:
+                loader = BuiltinImporter
+            elif _imp.is_frozen(name):
+                loader = FrozenImporter
+            else:
+                continue
+            spec = _spec_from_module(module, loader)
+            _init_module_attrs(spec, module)
+
+    # Directly load built-in modules needed during bootstrap.
+    self_module = sys.modules[__name__]
+    for builtin_name in ('_warnings',):
+        if builtin_name not in sys.modules:
+            builtin_module = _builtin_from_name(builtin_name)
+        else:
+            builtin_module = sys.modules[builtin_name]
+        setattr(self_module, builtin_name, builtin_module)
+
+    # Directly load the _thread module (needed during bootstrap).
+    try:
+        thread_module = _builtin_from_name('_thread')
+    except ImportError:
+        # Python was built without threads
+        thread_module = None
+    setattr(self_module, '_thread', thread_module)
+
+    # Directly load the _weakref module (needed during bootstrap).
+    weakref_module = _builtin_from_name('_weakref')
+    setattr(self_module, '_weakref', weakref_module)
+
+
+def _install(sys_module, _imp_module):
+    """Install importlib as the implementation of import."""
+    _setup(sys_module, _imp_module)
+
+    sys.meta_path.append(BuiltinImporter)
+    sys.meta_path.append(FrozenImporter)
+
+    global _bootstrap_external
+    _frozen_importlib_external = sys.modules['_frozen_importlib_external']
+    _bootstrap_external = _frozen_importlib_external
+    _frozen_importlib_external._install(sys.modules[__name__])
+ c               @  s©  d  Z  d a d d Ñ  Z d d Ñ  Z Gd d Ñ  d É Z i  Z i  Z Gd d	 Ñ  d	 e É Z Gd
+ d Ñ  d É Z	 Gd d Ñ  d É Z
+ Gd d Ñ  d É Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d d d d Ñ Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d  d! Ñ  Z Gd" d# Ñ  d# É Z Gd$ d% Ñ  d% É Z d& d d' d d( d) Ñ Z e É  Z d d d* d+ Ñ Z d, d- d. d/ Ñ Z d0 d1 Ñ  Z d2 d3 Ñ  Z d4 d5 Ñ  Z d6 d7 Ñ  Z d8 d9 Ñ  Z d: d; Ñ  Z  Gd< d= Ñ  d= É Z! Gd> d? Ñ  d? É Z" Gd@ dA Ñ  dA É Z# dB dC Ñ  Z$ dD dE Ñ  Z% d dF dG Ñ Z& dH dI Ñ  Z' dJ Z( e( dK Z) dL dM Ñ  Z* dN dO Ñ  Z+ d dP dQ dR Ñ Z, dS dT Ñ  Z- dU dV Ñ  Z. d d dW dP dX dY Ñ Z/ dZ d[ Ñ  Z0 d\ d] Ñ  Z1 d^ d_ Ñ  Z2 d S(`   uS  Core implementation of import.
+
+This module is NOT meant to be directly imported! It has been designed such
+that it can be bootstrapped into Python as the implementation of import. As
+such it requires the injection of specific modules and attributes in order to
+work. One should use importlib as the public-facing version of this module.
+
+Nc             C  s_   xE d d d d g D]1 } t  | | É rD t |  | t | | É É q q W|  j … | j   d S(   u/   Simple substitute for functools.update_wrapper.u
+   __module__u   __name__u   __qualname__u   __doc__N(   u   hasattru   setattru   getattru   __dict__u   update(   u   newu   oldu   replace(    (    u   <frozen importlib._bootstrap>u   _wrap   s
+      u   _wrapc             C   s   t  t É |  É S(   N(   u   typeu   sys(   u   name(    (    u   <frozen importlib._bootstrap>u   _new_module#   s    u   _new_modulec                s:   e  Z d Z d  Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d S(	   u?   Manages the possible clean-up of sys.modules for load_module().u   _ManageReloadc             C   s   | |  _  d  S(   N(   u   _name(   u   selfu   name(    (    u   <frozen importlib._bootstrap>u   __init__+   s    u   _ManageReload.__init__c             C   s   |  j  t j k |  _ d  S(   N(   u   _nameu   sysu   modulesu
+   _is_reload(   u   self(    (    u   <frozen importlib._bootstrap>u	   __enter__.   s    u   _ManageReload.__enter__c             G   sO   t  d d Ñ  | DÉ É rK |  j sK y t j |  j =Wn t k
+ rG Yn Xn  d  S(   Nc             s   s   |  ] } | d  k	 Vq d  S(   N(    (   u   .0u   arg(    (    u   <frozen importlib._bootstrap>u	   <genexpr>2   s    u)   _ManageReload.__exit__.<locals>.<genexpr>(   u   anyu
+   _is_reloadu   sysu   modulesu   _nameu   KeyError(   u   selfu   args(    (    u   <frozen importlib._bootstrap>u   __exit__1   s
+    "u   _ManageReload.__exit__N(   u   __name__u
+   __module__u   __qualname__u   __doc__u   __init__u	   __enter__u   __exit__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _ManageReload'   s   u   _ManageReloadc                 s   e  Z d Z d  S(   Nu   _DeadlockError(   u   __name__u
+   __module__u   __qualname__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _DeadlockError@   s   u   _DeadlockErrorc                sR   e  Z d Z d  Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d d	 Ñ  Z d
+ d Ñ  Z d S(   u©   A recursive lock implementation which is able to detect deadlocks
+    (e.g. thread 1 trying to take locks A then B, and thread 2 trying to
+    take locks B then A).
+    u   _ModuleLockc             C   sF   t  …    |  _ t  …    |  _ | |  _ d  |  _ d |  _ d |  _ d  S(   Ni    (   u   _threadu   allocate_locku   locku   wakeupu   nameu   owneru   countu   waiters(   u   selfu   name(    (    u   <frozen importlib._bootstrap>u   __init__J   s    			u   _ModuleLock.__init__c             C   sX   t  …    } |  j } x< t … |   } | d  k r7 d S| j } | | k rP d Sq Wd  S(   NFT(   u   _threadu	   get_identu   owneru   _blocking_onu   get(   u   selfu   meu   tidu   lock(    (    u   <frozen importlib._bootstrap>u   has_deadlockR   s    		u   _ModuleLock.has_deadlockc             C  sÿ   t  …    } |  t | <z≥ x¨ |  j èÇ |  j d k sD |  j | k r` | |  _ |  j d 7_ d S|  …    r t d |  É Ç n  |  j …	 d   r£ |  j
+ d 7_
+ n  Wd QRX|  j …	    |  j …    q WWd t | =Xd S(   uπ   
+        Acquire the module lock.  If a potential deadlock is detected,
+        a _DeadlockError is raised.
+        Otherwise, the lock is always acquired and True is returned.
+        i    i   Tu   deadlock detected by %rFN(   u   _threadu	   get_identu   _blocking_onu   locku   countu   owneru   has_deadlocku   _DeadlockErroru   wakeupu   acquireu   waitersu   release(   u   selfu   tid(    (    u   <frozen importlib._bootstrap>u   acquire^   s     
+
+	u   _ModuleLock.acquirec             C   s©   t  …    } |  j èç |  j | k r4 t d É Ç n  Ã |  j d k sL t Ç |  j d 8_ |  j d k rû d  |  _ |  j rõ |  j d 8_ |  j …	    n  n  Wd  QRXd  S(   Nu   cannot release un-acquired locki    i   (
+   u   _threadu	   get_identu   locku   owneru   RuntimeErroru   countu   AssertionErroru   waitersu   wakeupu   release(   u   selfu   tid(    (    u   <frozen importlib._bootstrap>u   releasew   s    
+		u   _ModuleLock.releasec             C   s   d …  |  j t |  É   S(   Nu   _ModuleLock({!r}) at {}(   u   formatu   nameu   id(   u   self(    (    u   <frozen importlib._bootstrap>u   __repr__Ñ   s    u   _ModuleLock.__repr__N(	   u   __name__u
+   __module__u   __qualname__u   __doc__u   __init__u   has_deadlocku   acquireu   releaseu   __repr__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _ModuleLockD   s   u   _ModuleLockc                sF   e  Z d Z d  Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d d	 Ñ  Z d
+ S(   uV   A simple _ModuleLock equivalent for Python builds without
+    multi-threading support.u   _DummyModuleLockc             C   s   | |  _  d |  _ d  S(   Ni    (   u   nameu   count(   u   selfu   name(    (    u   <frozen importlib._bootstrap>u   __init__å   s    	u   _DummyModuleLock.__init__c             C   s   |  j  d 7_  d S(   Ni   T(   u   count(   u   self(    (    u   <frozen importlib._bootstrap>u   acquireê   s    u   _DummyModuleLock.acquirec             C   s1   |  j  d k r t d É Ç n  |  j  d 8_  d  S(   Ni    u   cannot release un-acquired locki   (   u   countu   RuntimeError(   u   self(    (    u   <frozen importlib._bootstrap>u   releaseî   s    u   _DummyModuleLock.releasec             C   s   d …  |  j t |  É   S(   Nu   _DummyModuleLock({!r}) at {}(   u   formatu   nameu   id(   u   self(    (    u   <frozen importlib._bootstrap>u   __repr__ô   s    u   _DummyModuleLock.__repr__N(   u   __name__u
+   __module__u   __qualname__u   __doc__u   __init__u   acquireu   releaseu   __repr__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _DummyModuleLockà   s
+   u   _DummyModuleLockc                 s4   e  Z d Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d  S(   Nu   _ModuleLockManagerc             C   s   | |  _  d  |  _ d  S(   N(   u   _nameu   _lock(   u   selfu   name(    (    u   <frozen importlib._bootstrap>u   __init__ü   s    	u   _ModuleLockManager.__init__c             C   s5   z t  |  j É |  _ Wd  t …    X|  j …    d  S(   N(   u   _get_module_locku   _nameu   _locku   _impu   release_locku   acquire(   u   self(    (    u   <frozen importlib._bootstrap>u	   __enter__£   s    u   _ModuleLockManager.__enter__c             O   s   |  j  …    d  S(   N(   u   _locku   release(   u   selfu   argsu   kwargs(    (    u   <frozen importlib._bootstrap>u   __exit__™   s    u   _ModuleLockManager.__exit__(   u   __name__u
+   __module__u   __qualname__u   __init__u	   __enter__u   __exit__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _ModuleLockManagerù   s   u   _ModuleLockManagerc               sé   d } y t  à  É  } Wn t k
+ r+ Yn X| d k rä t d k rS t à  É } n t à  É } á  f d d Ü  } t … | |   t  à  <n  | S(   um   Get or create the module lock for a given module name.
+
+    Should only be called with the import lock taken.Nc                s#   t  … à    |  k r t  à  =n  d  S(   N(   u   _module_locksu   get(   u   wr(   u   name(    u   <frozen importlib._bootstrap>u   cbæ   s    u   _get_module_lock.<locals>.cb(   u   _module_locksu   KeyErroru   _threadu   _DummyModuleLocku   _ModuleLocku   _weakrefu   ref(   u   nameu   locku   cb(    (   u   nameu   <frozen importlib._bootstrap>u   _get_module_lock∞   s    u   _get_module_lockc             C  sG   t  |  É } t …    y | …    Wn t k
+ r8 Yn X| …    d S(   u  Release the global import lock, and acquires then release the
+    module lock for a given module name.
+    This is used to ensure a module is completely initialized, in the
+    event it is being imported by another thread.
+
+    Should only be called with the import lock taken.N(   u   _get_module_locku   _impu   release_locku   acquireu   _DeadlockErroru   release(   u   nameu   lock(    (    u   <frozen importlib._bootstrap>u   _lock_unlock_moduleƒ   s    
+u   _lock_unlock_modulec             O  s   |  | | é  S(   u.  remove_importlib_frames in import.c will always remove sequences
+    of importlib frames that end with a call to this function
+
+    Use it instead of a normal call in places where including the importlib
+    frames introduces unwanted noise into the traceback (e.g. when executing
+    module code)
+    (    (   u   fu   argsu   kwds(    (    u   <frozen importlib._bootstrap>u   _call_with_frames_removed◊   s    u   _call_with_frames_removedu	   verbosityi   c            G  sQ   t  j j | k rM |  … d   s. d |  }  n  t |  j | å  d t  j Én  d S(   u=   Print the message to stderr if -v/PYTHONVERBOSE is turned on.(   u   #u   import u   # u   fileN(   u   sysu   flagsu   verboseu
+   startswithu   printu   formatu   stderr(   u   messageu	   verbosityu   args(    (    u   <frozen importlib._bootstrap>u   _verbose_message‚   s    u   _verbose_messagec               s#   á  f d d Ü  } t  | à  É | S(   u1   Decorator to verify the named module is built-in.c                s:   | t  j k r- t d … |   d | ÉÇ n  à  |  | É S(   Nu   {!r} is not a built-in moduleu   name(   u   sysu   builtin_module_namesu   ImportErroru   format(   u   selfu   fullname(   u   fxn(    u   <frozen importlib._bootstrap>u   _requires_builtin_wrapperÏ   s    u4   _requires_builtin.<locals>._requires_builtin_wrapper(   u   _wrap(   u   fxnu   _requires_builtin_wrapper(    (   u   fxnu   <frozen importlib._bootstrap>u   _requires_builtinÍ   s    u   _requires_builtinc               s#   á  f d d Ü  } t  | à  É | S(   u/   Decorator to verify the named module is frozen.c                s:   t  … |   s- t d … |   d | ÉÇ n  à  |  | É S(   Nu   {!r} is not a frozen moduleu   name(   u   _impu	   is_frozenu   ImportErroru   format(   u   selfu   fullname(   u   fxn(    u   <frozen importlib._bootstrap>u   _requires_frozen_wrapper˜   s    u2   _requires_frozen.<locals>._requires_frozen_wrapper(   u   _wrap(   u   fxnu   _requires_frozen_wrapper(    (   u   fxnu   <frozen importlib._bootstrap>u   _requires_frozenı   s    u   _requires_frozenc             C  sQ   t  | |  É } | t j k rC t j | } t | | É t j | St | É Sd S(   uÄ   Load the specified module into sys.modules and return it.
+
+    This method is deprecated.  Use loader.exec_module instead.
+
+    N(   u   spec_from_loaderu   sysu   modulesu   _execu   _load(   u   selfu   fullnameu   specu   module(    (    u   <frozen importlib._bootstrap>u   _load_module_shim  s    u   _load_module_shimc             C   s  t  |  d d  É } t | d É rF y | … |    St k
+ rB Yn Xn  y |  j } Wn t k
+ rg Yn X| d  k	 r~ t | É Sy |  j } Wn t k
+ r• d } Yn Xy |  j } Wn; t k
+ r | d  k r‹ d …	 |   Sd …	 | |   SYn Xd …	 | |   Sd  S(   Nu
+   __loader__u   module_repru   ?u   <module {!r}>u   <module {!r} ({!r})>u   <module {!r} from {!r}>(
+   u   getattru   hasattru   module_repru	   Exceptionu   __spec__u   AttributeErroru   _module_repr_from_specu   __name__u   __file__u   format(   u   moduleu   loaderu   specu   nameu   filename(    (    u   <frozen importlib._bootstrap>u   _module_repr  s.    
+u   _module_reprc                 s4   e  Z d Z d d Ñ  Z d d Ñ  Z d d Ñ  Z d  S(   Nu   _installed_safelyc             C   s   | |  _  | j |  _ d  S(   N(   u   _moduleu   __spec__u   _spec(   u   selfu   module(    (    u   <frozen importlib._bootstrap>u   __init__7  s    	u   _installed_safely.__init__c             C   s&   d |  j  _ |  j t j |  j  j <d  S(   NT(   u   _specu   _initializingu   _moduleu   sysu   modulesu   name(   u   self(    (    u   <frozen importlib._bootstrap>u	   __enter__;  s    u   _installed_safely.__enter__c             G   sy   ze |  j  } t d d Ñ  | DÉ É rN y t j | j =Wn t k
+ rJ Yn Xn t d | j | j É Wd  d |  j  _ Xd  S(   Nc             s   s   |  ] } | d  k	 Vq d  S(   N(    (   u   .0u   arg(    (    u   <frozen importlib._bootstrap>u	   <genexpr>E  s    u-   _installed_safely.__exit__.<locals>.<genexpr>u   import {!r} # {!r}F(	   u   _specu   anyu   sysu   modulesu   nameu   KeyErroru   _verbose_messageu   loaderu   _initializing(   u   selfu   argsu   spec(    (    u   <frozen importlib._bootstrap>u   __exit__B  s    	u   _installed_safely.__exit__(   u   __name__u
+   __module__u   __qualname__u   __init__u	   __enter__u   __exit__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _installed_safely5  s   u   _installed_safelyc                s¨   e  Z d Z d  Z d d d d d d d d Ñ Z d d	 Ñ  Z d
+ d Ñ  Z e d d Ñ  É Z e j	 d d Ñ  É Z e d d Ñ  É Z
+ e d d Ñ  É Z e j	 d d Ñ  É Z d S(   u–  The specification for a module, used for loading.
+
+    A module's spec is the source for information about the module.  For
+    data associated with the module, including source, use the spec's
+    loader.
+
+    `name` is the absolute name of the module.  `loader` is the loader
+    to use when loading the module.  `parent` is the name of the
+    package the module is in.  The parent is derived from the name.
+
+    `is_package` determines if the module is considered a package or
+    not.  On modules this is reflected by the `__path__` attribute.
+
+    `origin` is the specific location used by the loader from which to
+    load the module, if that information is available.  When filename is
+    set, origin will match.
+
+    `has_location` indicates that a spec's "origin" reflects a location.
+    When this is True, `__file__` attribute of the module is set.
+
+    `cached` is the location of the cached bytecode file, if any.  It
+    corresponds to the `__cached__` attribute.
+
+    `submodule_search_locations` is the sequence of path entries to
+    search when importing submodules.  If set, is_package should be
+    True--and False otherwise.
+
+    Packages are simply modules that (may) have submodules.  If a spec
+    has a non-None value in `submodule_search_locations`, the import
+    system will consider modules loaded from the spec as packages.
+
+    Only finders (see importlib.abc.MetaPathFinder and
+    importlib.abc.PathEntryFinder) should modify ModuleSpec instances.
+
+    u
+   ModuleSpecu   originNu   loader_stateu
+   is_packagec            C   sO   | |  _  | |  _ | |  _ | |  _ | r0 g  n d  |  _ d |  _ d  |  _ d  S(   NF(   u   nameu   loaderu   originu   loader_stateu   submodule_search_locationsu   _set_fileattru   _cached(   u   selfu   nameu   loaderu   originu   loader_stateu
+   is_package(    (    u   <frozen importlib._bootstrap>u   __init__u  s    					u   ModuleSpec.__init__c             C   sô   d …  |  j   d …  |  j   g } |  j d  k	 rO | … d …  |  j     n  |  j d  k	 rz | … d …  |  j     n  d …  |  j j d … |     S(   Nu	   name={!r}u   loader={!r}u   origin={!r}u   submodule_search_locations={}u   {}({})u   , (	   u   formatu   nameu   loaderu   originu   appendu   submodule_search_locationsu	   __class__u   __name__u   join(   u   selfu   args(    (    u   <frozen importlib._bootstrap>u   __repr__Å  s    u   ModuleSpec.__repr__c             C   sâ   |  j  } yg |  j | j k or |  j | j k or |  j | j k or | | j  k or |  j | j k or |  j | j k St k
+ rÑ d SXd  S(   NF(   u   submodule_search_locationsu   nameu   loaderu   originu   cachedu   has_locationu   AttributeError(   u   selfu   otheru   smsl(    (    u   <frozen importlib._bootstrap>u   __eq__ã  s    	u   ModuleSpec.__eq__c             C   s^   |  j  d  k rW |  j d  k	 rT |  j rT t d  k r< t Ç n  t … |  j   |  _  n  n  |  j  S(   N(   u   _cachedu   originu   _set_fileattru   _bootstrap_externalu   NotImplementedErroru   _get_cached(   u   self(    (    u   <frozen importlib._bootstrap>u   cachedó  s    	u   ModuleSpec.cachedc             C   s   | |  _  d  S(   N(   u   _cached(   u   selfu   cached(    (    u   <frozen importlib._bootstrap>u   cached†  s    c             C  s.   |  j  d k r# |  j … d   d S|  j Sd S(   u    The name of the module's parent.Nu   .i    (   u   submodule_search_locationsu   nameu
+   rpartition(   u   self(    (    u   <frozen importlib._bootstrap>u   parent§  s    u   ModuleSpec.parentc             C   s   |  j  S(   N(   u   _set_fileattr(   u   self(    (    u   <frozen importlib._bootstrap>u   has_location¨  s    u   ModuleSpec.has_locationc             C   s   t  | É |  _ d  S(   N(   u   boolu   _set_fileattr(   u   selfu   value(    (    u   <frozen importlib._bootstrap>u   has_location∞  s    (   u   __name__u
+   __module__u   __qualname__u   __doc__u   __init__u   __repr__u   __eq__u   propertyu   cachedu   setteru   parentu   has_location(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u
+   ModuleSpecP  s   $
+	u
+   ModuleSpecu   originu
+   is_packagec            C  sﬂ   t  | d É rq t d k r$ t Ç n  t j } | d k rI | |  d | ÉS| rU g  n d } | |  d | d | ÉS| d k r∆ t  | d É rΩ y | … |    } Wn t k
+ rπ d } Yn Xn d } n  t |  | d | d | ÉS(   u5   Return a module spec based on various loader methods.u   get_filenameNu   loaderu   submodule_search_locationsu
+   is_packageFu   origin(   u   hasattru   _bootstrap_externalu   NotImplementedErroru   spec_from_file_locationu
+   is_packageu   ImportErroru
+   ModuleSpec(   u   nameu   loaderu   originu
+   is_packageu   spec_from_file_locationu   search(    (    u   <frozen importlib._bootstrap>u   spec_from_loaderµ  s"    			u   spec_from_loaderc             C   s|  y |  j  } Wn t k
+ r! Yn X| d  k	 r2 | S|  j } | d  k rl y |  j } Wn t k
+ rh Yn Xn  y |  j } Wn t k
+ rì d  } Yn X| d  k r‡ | d  k r◊ y | j } Wn t k
+ r” d  } Yn Xn | } n  y |  j } Wn t k
+ rd  } Yn Xy t |  j É } Wn t k
+ r5d  } Yn Xt	 | | d | É} | d  k r]d n d | _
+ | | _ | | _ | S(   Nu   originFT(   u   __spec__u   AttributeErroru   __name__u
+   __loader__u   __file__u   _ORIGINu
+   __cached__u   listu   __path__u
+   ModuleSpecu   _set_fileattru   cachedu   submodule_search_locations(   u   moduleu   loaderu   originu   specu   nameu   locationu   cachedu   submodule_search_locations(    (    u   <frozen importlib._bootstrap>u   _spec_from_module“  sH    				u   _spec_from_moduleu   overrideFc            C   sZ  | s t  | d d  É d  k rF y |  j | _ Wn t k
+ rB Yn Xn  | sd t  | d d  É d  k rÏ |  j } | d  k r« |  j d  k	 rƒ t d  k rù t Ç n  t j } | …	 |   } |  j | _
+ n  n  y | | _ Wn t k
+ rË Yn Xn  | s
+t  | d d  É d  k r2y |  j | _ Wn t k
+ r.Yn Xn  y |  | _ Wn t k
+ rSYn X| srt  | d d  É d  k r¨|  j d  k	 r©y |  j | _ Wn t k
+ r•Yn Xn  n  |  j rV| s”t  | d d  É d  k r˚y |  j | _ Wn t k
+ r˜Yn Xn  | st  | d d  É d  k rS|  j d  k	 rPy |  j | _ Wn t k
+ rLYn Xn  n  n  | S(   Nu   __name__u
+   __loader__u   __package__u   __path__u   __file__u
+   __cached__(   u   getattru   nameu   __name__u   AttributeErroru   loaderu   submodule_search_locationsu   _bootstrap_externalu   NotImplementedErroru   _NamespaceLoaderu   __new__u   _pathu
+   __loader__u   parentu   __package__u   __spec__u   __path__u   has_locationu   originu   __file__u   cachedu
+   __cached__(   u   specu   moduleu   overrideu   loaderu   _NamespaceLoader(    (    u   <frozen importlib._bootstrap>u   _init_module_attrsˇ  s\    				u   _init_module_attrsc             C  sá   d } t  |  j d É r- |  j … |    } n+ t  |  j d É rX t … d t d d  n  | d k rv t |  j É } n  t |  | É | S(   u+   Create a module based on the provided spec.Nu   create_moduleu   exec_moduleuW   starting in Python 3.6, loaders defining exec_module() must also define create_module()u
+   stackleveli   (	   u   hasattru   loaderu   create_moduleu	   _warningsu   warnu   DeprecationWarningu   _new_moduleu   nameu   _init_module_attrs(   u   specu   module(    (    u   <frozen importlib._bootstrap>u   module_from_spec;  s    	u   module_from_specc             C  sï   |  j  d k r d n |  j  } |  j d k r_ |  j d k rI d … |   Sd … | |  j   Sn2 |  j r{ d … | |  j   Sd … |  j  |  j   Sd S(   u&   Return the repr to use for the module.Nu   ?u   <module {!r}>u   <module {!r} ({!r})>u   <module {!r} from {!r}>u   <module {!r} ({})>(   u   nameu   originu   loaderu   formatu   has_location(   u   specu   name(    (    u   <frozen importlib._bootstrap>u   _module_repr_from_specM  s    	u   _module_repr_from_specc             C  s  |  j  } t …    t | É è÷ t j … |   | k	 r\ d … |   } t | d | ÉÇ n  |  j	 d k r© |  j
+ d k rí t d d |  j  ÉÇ n  t |  | d d É| St |  | d d Ét |  j	 d É s· |  j	 … |   n |  j	 … |   Wd QRXt j | S(   u3   Execute the spec in an existing module's namespace.u   module {!r} not in sys.modulesu   nameNu   missing loaderu   overrideTu   exec_module(   u   nameu   _impu   acquire_locku   _ModuleLockManageru   sysu   modulesu   getu   formatu   ImportErroru   loaderu   submodule_search_locationsu   _init_module_attrsu   hasattru   load_moduleu   exec_module(   u   specu   moduleu   nameu   msg(    (    u   <frozen importlib._bootstrap>u   _exec^  s     	
+u   _execc             C   s  |  j  … |  j   t j |  j } t | d d  É d  k rc y |  j  | _ Wn t k
+ r_ Yn Xn  t | d d  É d  k rŒ y; | j | _	 t
+ | d É sµ |  j … d   d | _	 n  Wn t k
+ r  Yn Xn  t | d d  É d  k ry |  | _ Wn t k
+ rYn Xn  | S(   Nu
+   __loader__u   __package__u   __path__u   .i    u   __spec__(   u   loaderu   load_moduleu   nameu   sysu   modulesu   getattru
+   __loader__u   AttributeErroru   __name__u   __package__u   hasattru
+   rpartitionu   __spec__(   u   specu   module(    (    u   <frozen importlib._bootstrap>u   _load_backward_compatiblew  s(     u   _load_backward_compatiblec             C   s•   |  j  d  k	 r. t |  j  d É s+ t |  É Sn  t |  É } t | É èN |  j  d  k rÄ |  j d  k r} t d d |  j ÉÇ n  n |  j  … |   Wd  QRXt	 j
+ |  j S(   Nu   exec_moduleu   missing loaderu   name(   u   loaderu   hasattru   _load_backward_compatibleu   module_from_specu   _installed_safelyu   submodule_search_locationsu   ImportErroru   nameu   exec_moduleu   sysu   modules(   u   specu   module(    (    u   <frozen importlib._bootstrap>u   _load_unlockedî  s    u   _load_unlockedc             C  s+   t  …    t |  j É è t |  É SQRXd S(   uø   Return a new module object, loaded by the spec's loader.
+
+    The module is not added to its parent.
+
+    If a module is already in sys.modules, that existing module gets
+    clobbered.
+
+    N(   u   _impu   acquire_locku   _ModuleLockManageru   nameu   _load_unlocked(   u   spec(    (    u   <frozen importlib._bootstrap>u   _load´  s    	
+u   _loadc                sÕ   e  Z d Z d  Z e d d Ñ  É Z e d d d d Ñ É Z e d d d Ñ É Z e d	 d
+ Ñ  É Z	 e d d Ñ  É Z
+ e e d d Ñ  É É Z e e d d Ñ  É É Z e e d d Ñ  É É Z e e É Z d S(   uê   Meta path import for built-in modules.
+
+    All methods are either class or static methods to avoid the need to
+    instantiate the class.
+
+    u   BuiltinImporterc             C  s   d …  |  j   S(   us   Return repr for the module.
+
+        The method is deprecated.  The import machinery does the job itself.
+
+        u   <module {!r} (built-in)>(   u   formatu   __name__(   u   module(    (    u   <frozen importlib._bootstrap>u   module_reprƒ  s    u   BuiltinImporter.module_reprNc             C   s:   | d  k	 r d  St  … |   r2 t | |  d d ÉSd  Sd  S(   Nu   originu   built-in(   u   _impu
+   is_builtinu   spec_from_loader(   u   clsu   fullnameu   pathu   target(    (    u   <frozen importlib._bootstrap>u	   find_specÕ  s
+    u   BuiltinImporter.find_specc             C  s)   |  …  | |   } | d k	 r% | j Sd S(   uØ   Find the built-in module.
+
+        If 'path' is ever specified then the search is considered a failure.
+
+        This method is deprecated.  Use find_spec() instead.
+
+        N(   u	   find_specu   loader(   u   clsu   fullnameu   pathu   spec(    (    u   <frozen importlib._bootstrap>u   find_module÷  s    	u   BuiltinImporter.find_modulec             C  sF   | j  t j k r6 t d … | j    d | j  ÉÇ n  t t j | É S(   u   Create a built-in moduleu   {!r} is not a built-in moduleu   name(   u   nameu   sysu   builtin_module_namesu   ImportErroru   formatu   _call_with_frames_removedu   _impu   create_builtin(   u   selfu   spec(    (    u   <frozen importlib._bootstrap>u   create_module‚  s    u   BuiltinImporter.create_modulec             C  s   t  t j | É d S(   u   Exec a built-in moduleN(   u   _call_with_frames_removedu   _impu   exec_builtin(   u   selfu   module(    (    u   <frozen importlib._bootstrap>u   exec_moduleÍ  s    u   BuiltinImporter.exec_modulec             C  s   d S(   u9   Return None as built-in modules do not have code objects.N(    (   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u   get_codeÔ  s    u   BuiltinImporter.get_codec             C  s   d S(   u8   Return None as built-in modules do not have source code.N(    (   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u
+   get_sourceı  s    u   BuiltinImporter.get_sourcec             C  s   d S(   u4   Return False as built-in modules are never packages.F(    (   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u
+   is_package˚  s    u   BuiltinImporter.is_package(   u   __name__u
+   __module__u   __qualname__u   __doc__u   staticmethodu   module_repru   classmethodu	   find_specu   find_moduleu   create_moduleu   exec_moduleu   _requires_builtinu   get_codeu
+   get_sourceu
+   is_packageu   _load_module_shimu   load_module(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   BuiltinImporterª  s   	u   BuiltinImporterc                s”   e  Z d Z d  Z e d d Ñ  É Z e d d d d Ñ É Z e d d d Ñ É Z e d	 d
+ Ñ  É Z	 e d d Ñ  É Z
+ e d d Ñ  É Z e e d d Ñ  É É Z e e d d Ñ  É É Z e e d d Ñ  É É Z d S(   ué   Meta path import for frozen modules.
+
+    All methods are either class or static methods to avoid the need to
+    instantiate the class.
+
+    u   FrozenImporterc             C  s   d …  |  j   S(   us   Return repr for the module.
+
+        The method is deprecated.  The import machinery does the job itself.
+
+        u   <module {!r} (frozen)>(   u   formatu   __name__(   u   m(    (    u   <frozen importlib._bootstrap>u   module_repr  s    u   FrozenImporter.module_reprNc             C   s*   t  … |   r" t | |  d d ÉSd  Sd  S(   Nu   originu   frozen(   u   _impu	   is_frozenu   spec_from_loader(   u   clsu   fullnameu   pathu   target(    (    u   <frozen importlib._bootstrap>u	   find_spec  s    u   FrozenImporter.find_specc             C  s   t  … |   r |  Sd S(   u]   Find a frozen module.
+
+        This method is deprecated.  Use find_spec() instead.
+
+        N(   u   _impu	   is_frozen(   u   clsu   fullnameu   path(    (    u   <frozen importlib._bootstrap>u   find_module  s    u   FrozenImporter.find_modulec             C  s   d S(   u*   Use default semantics for module creation.N(    (   u   clsu   spec(    (    u   <frozen importlib._bootstrap>u   create_module&  s    u   FrozenImporter.create_modulec             C   s_   |  j  j } t … |   s9 t d … |   d | ÉÇ n  t t j | É } t | |  j	 É d  S(   Nu   {!r} is not a frozen moduleu   name(
+   u   __spec__u   nameu   _impu	   is_frozenu   ImportErroru   formatu   _call_with_frames_removedu   get_frozen_objectu   execu   __dict__(   u   moduleu   nameu   code(    (    u   <frozen importlib._bootstrap>u   exec_module*  s    u   FrozenImporter.exec_modulec             C  s   t  |  | É S(   u_   Load a frozen module.
+
+        This method is deprecated.  Use exec_module() instead.
+
+        (   u   _load_module_shim(   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u   load_module3  s    u   FrozenImporter.load_modulec             C  s   t  … |   S(   u-   Return the code object for the frozen module.(   u   _impu   get_frozen_object(   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u   get_code<  s    u   FrozenImporter.get_codec             C  s   d S(   u6   Return None as frozen modules do not have source code.N(    (   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u
+   get_sourceB  s    u   FrozenImporter.get_sourcec             C  s   t  … |   S(   u.   Return True if the frozen module is a package.(   u   _impu   is_frozen_package(   u   clsu   fullname(    (    u   <frozen importlib._bootstrap>u
+   is_packageH  s    u   FrozenImporter.is_package(   u   __name__u
+   __module__u   __qualname__u   __doc__u   staticmethodu   module_repru   classmethodu	   find_specu   find_moduleu   create_moduleu   exec_moduleu   load_moduleu   _requires_frozenu   get_codeu
+   get_sourceu
+   is_package(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   FrozenImporter  s   			u   FrozenImporterc                s.   e  Z d Z d  Z d d Ñ  Z d d Ñ  Z d S(   u$   Context manager for the import lock.u   _ImportLockContextc             C  s   t  …    d S(   u   Acquire the import lock.N(   u   _impu   acquire_lock(   u   self(    (    u   <frozen importlib._bootstrap>u	   __enter__U  s    u   _ImportLockContext.__enter__c             C  s   t  …    d S(   u<   Release the import lock regardless of any raised exceptions.N(   u   _impu   release_lock(   u   selfu   exc_typeu	   exc_valueu   exc_traceback(    (    u   <frozen importlib._bootstrap>u   __exit__Y  s    u   _ImportLockContext.__exit__N(   u   __name__u
+   __module__u   __qualname__u   __doc__u	   __enter__u   __exit__(   u
+   __locals__(    (    u   <frozen importlib._bootstrap>u   _ImportLockContextQ  s   u   _ImportLockContextc             C  s[   | …  d | d   } t | É | k  r7 t d É Ç n  | d } |  rW d … | |    S| S(   u2   Resolve a relative module name to an absolute one.u   .i   u2   attempted relative import beyond top-level packagei    u   {}.{}(   u   rsplitu   lenu
+   ValueErroru   format(   u   nameu   packageu   levelu   bitsu   base(    (    u   <frozen importlib._bootstrap>u   _resolve_name^  s
+    
+u   _resolve_namec             C   s/   |  …  | |   } | d  k r" d  St | | É S(   N(   u   find_moduleu   spec_from_loader(   u   finderu   nameu   pathu   loader(    (    u   <frozen importlib._bootstrap>u   _find_spec_legacyg  s    u   _find_spec_legacyc       	      C  s-  t  j d k	 r+ t  j s+ t … d t   n  |  t  j k } xÏ t  j D]› } t É  è] y | j } Wn6 t k
+ rô t	 | |  | É } | d k rï wD n  Yn X| |  | | É } Wd QRX| d k	 r!| s|  t  j k rt  j |  } y | j
+ } Wn t k
+ r| SX| d k r| S| Sn | SqD qD Wd Sd S(   u   Find a module's loader.Nu   sys.meta_path is empty(   u   sysu	   meta_pathu	   _warningsu   warnu   ImportWarningu   modulesu   _ImportLockContextu	   find_specu   AttributeErroru   _find_spec_legacyu   __spec__(	   u   nameu   pathu   targetu	   is_reloadu   finderu	   find_specu   specu   moduleu   __spec__(    (    u   <frozen importlib._bootstrap>u
+   _find_specp  s2    
+ 
+u
+   _find_specc             C  s«   t  |  t É s- t d … t |  É   É Ç n  | d k  rH t d É Ç n  | d k r¢ t  | t É sr t d É Ç n- | t j k rü d } t | … |   É Ç n  n  |  s√ | d k r√ t d É Ç n  d S(   u   Verify arguments are "sane".u   module name must be str, not {}i    u   level must be >= 0u   __package__ not set to a stringu=   Parent module {!r} not loaded, cannot perform relative importu   Empty module nameN(	   u
+   isinstanceu   stru	   TypeErroru   formatu   typeu
+   ValueErroru   sysu   modulesu   SystemError(   u   nameu   packageu   levelu   msg(    (    u   <frozen importlib._bootstrap>u   _sanity_checkò  s    u   _sanity_checku   No module named u   {!r}c             C   s1  d  } |  …  d   d } | rµ | t j k r> t | | É n  |  t j k rX t j |  St j | } y | j } Wn= t k
+ r± t d … |  |   } t | d |  Éd  Ç Yn Xn  t	 |  | É } | d  k rÓ t t … |    d |  ÉÇ n t
+ | É } | r-t j | } t | |  …  d   d | É n  | S(   Nu   .i    u   ; {!r} is not a packageu   namei   (   u
+   rpartitionu   sysu   modulesu   _call_with_frames_removedu   __path__u   AttributeErroru   _ERR_MSGu   formatu   ImportErroru
+   _find_specu   _load_unlockedu   setattr(   u   nameu   import_u   pathu   parentu   parent_moduleu   msgu   specu   module(    (    u   <frozen importlib._bootstrap>u   _find_and_load_unlocked¨  s*     u   _find_and_load_unlockedc             C  s!   t  |  É è t |  | É SQRXd S(   u6   Find and load the module, and release the import lock.N(   u   _ModuleLockManageru   _find_and_load_unlocked(   u   nameu   import_(    (    u   <frozen importlib._bootstrap>u   _find_and_load«  s    u   _find_and_loadi    c             C  s¨   t  |  | | É | d k r1 t |  | | É }  n  t …    |  t j k rW t |  t É St j |  } | d k rû t …    d …	 |    } t
+ | d |  ÉÇ n  t |  É | S(   u2  Import and return the module based on its name, the package the call is
+    being made from, and the level adjustment.
+
+    This function represents the greatest common denominator of functionality
+    between import_module and __import__. This includes setting __package__ if
+    the loader did not.
+
+    i    Nu(   import of {} halted; None in sys.modulesu   name(   u   _sanity_checku   _resolve_nameu   _impu   acquire_locku   sysu   modulesu   _find_and_loadu   _gcd_importu   release_locku   formatu   ImportErroru   _lock_unlock_module(   u   nameu   packageu   levelu   moduleu   message(    (    u   <frozen importlib._bootstrap>u   _gcd_importÕ  s    	
+
+	
+u   _gcd_importc             C  s  t  |  d É r˝ d | k rY t | É } | … d   t  |  d É rV | … |  j   n  n  xû | D]ñ } t  |  | É sˆ d … |  j |   } y t | | É WnU t k
+ rÚ } z4 t	 | É …
+ t   r› | j | k r⁄ w` n  n  Ç  Wd d } ~ XYn Xq` q` Wn  |  S(   uÓ   Figure out what __import__ should return.
+
+    The import_ parameter is a callable which takes the name of module to
+    import. It is required to decouple the function from assuming importlib's
+    import implementation is desired.
+
+    u   __path__u   *u   __all__u   {}.{}N(   u   hasattru   listu   removeu   extendu   __all__u   formatu   __name__u   _call_with_frames_removedu   ImportErroru   stru
+   startswithu   _ERR_MSG_PREFIXu   name(   u   moduleu   fromlistu   import_u   xu	   from_nameu   exc(    (    u   <frozen importlib._bootstrap>u   _handle_fromlistÂ  s$    
+ 	 u   _handle_fromlistc             C  sN   |  …  d   } | d k rJ |  d } d |  k rG | … d   d } n  n  | S(   uß   Calculate what __package__ should be.
+
+    __package__ is not guaranteed to be defined or could be set to None
+    to represent that its proper value is unknown.
+
+    u   __package__Nu   __name__u   __path__u   .i    (   u   getu
+   rpartition(   u   globalsu   package(    (    u   <frozen importlib._bootstrap>u   _calc___package__  s    
+u   _calc___package__(    c       	      C  s„   | d k r t  |  É } n6 | d k	 r- | n i  } t | É } t  |  | | É } | sœ | d k rz t  |  … d   d É S|  sÑ | St |  É t |  … d   d É } t j | j d t | j É | Ö Sn t | | t  É Sd S(   u◊  Import a module.
+
+    The 'globals' argument is used to infer where the import is occurring from
+    to handle relative imports. The 'locals' argument is ignored. The
+    'fromlist' argument specifies what should exist as attributes on the module
+    being imported (e.g. ``from module import <fromlist>``).  The 'level'
+    argument represents the package location to import from in a relative
+    import (e.g. ``from ..pkg import mod`` would have a 'level' of 2).
+
+    i    Nu   .(   u   _gcd_importu   _calc___package__u	   partitionu   lenu   sysu   modulesu   __name__u   _handle_fromlist(	   u   nameu   globalsu   localsu   fromlistu   levelu   moduleu   globals_u   packageu   cut_off(    (    u   <frozen importlib._bootstrap>u
+   __import__  s    #(u
+   __import__c             C   s8   t  … |    } | d  k r. t d |  É Ç n  t | É S(   Nu   no built-in module named (   u   BuiltinImporteru	   find_specu   ImportErroru   _load_unlocked(   u   nameu   spec(    (    u   <frozen importlib._bootstrap>u   _builtin_from_name7  s    u   _builtin_from_namec             C  sM  | a  |  a t t É } x~ t j …    D]m \ } } t | | É rï | t j k r[ t } n t  … |   rs t	 } n q( t
+ | | É } t | | É q( q( Wt j t } xI d D]A } | t j k r— t | É }	 n t j | }	 t | | |	 É q≠ Wy t d É }
+ Wn t k
+ rd }
+ Yn Xt | d |
+ É t d É } t | d | É d S(   u˙   Setup importlib by importing needed built-in modules and injecting them
+    into the global namespace.
+
+    As sys is needed for sys.modules access and _imp is needed to load built-in
+    modules, those two modules must be explicitly passed in.
+
+    (   u	   _warningsu   _threadNu   _weakref(   u   _impu   sysu   typeu   modulesu   itemsu
+   isinstanceu   builtin_module_namesu   BuiltinImporteru	   is_frozenu   FrozenImporteru   _spec_from_moduleu   _init_module_attrsu   __name__u   _builtin_from_nameu   setattru   ImportError(   u
+   sys_moduleu   _imp_moduleu   module_typeu   nameu   moduleu   loaderu   specu   self_moduleu   builtin_nameu   builtin_moduleu   thread_moduleu   weakref_module(    (    u   <frozen importlib._bootstrap>u   _setup>  s6    	 		 u   _setupc             C  sX   t  |  | É t j … t   t j … t   t j d } | a | … t j t	   d S(   u2   Install importlib as the implementation of import.u   _frozen_importlib_externalN(
+   u   _setupu   sysu	   meta_pathu   appendu   BuiltinImporteru   FrozenImporteru   modulesu   _bootstrap_externalu   _installu   __name__(   u
+   sys_moduleu   _imp_moduleu   _frozen_importlib_external(    (    u   <frozen importlib._bootstrap>u   _installm  s    u   _install(3   u   __doc__u   _bootstrap_externalu   _wrapu   _new_moduleu   _ManageReloadu   _module_locksu   _blocking_onu   RuntimeErroru   _DeadlockErroru   _ModuleLocku   _DummyModuleLocku   _ModuleLockManageru   _get_module_locku   _lock_unlock_moduleu   _call_with_frames_removedu   _verbose_messageu   _requires_builtinu   _requires_frozenu   _load_module_shimu   _module_repru   _installed_safelyu
+   ModuleSpecu   spec_from_loaderu   objectu	   _POPULATEu   _spec_from_moduleu   _init_module_attrsu   module_from_specu   _module_repr_from_specu   _execu   _load_backward_compatibleu   _load_unlockedu   _loadu   BuiltinImporteru   FrozenImporteru   _ImportLockContextu   _resolve_nameu   _find_spec_legacyu
+   _find_specu   _sanity_checku   _ERR_MSG_PREFIXu   _ERR_MSGu   _find_and_load_unlockedu   _find_and_loadu   _gcd_importu   _handle_fromlistu   _calc___package__u
+   __import__u   _builtin_from_nameu   _setupu   _install(    (    (    u   <frozen importlib._bootstrap>u   <module>   s`   D$e	-<IM		(
+ #/

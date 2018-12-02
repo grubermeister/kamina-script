@@ -1,3 +1,0 @@
-fails:StringIO#close returns nil
-fails:StringIO#close prevents further reading and/or writing
-fails:StringIO#close does not raise anything when self was already closed

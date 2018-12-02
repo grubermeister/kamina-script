@@ -1,3 +1,0 @@
-fails:Module#module_eval resolves constants in the caller scope
-fails:Module#module_eval resolves constants in the caller scope ignoring send
-fails:Module#module_eval passes the module as the first argument of the block

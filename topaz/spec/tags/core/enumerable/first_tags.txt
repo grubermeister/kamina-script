@@ -1,2 +1,0 @@
-fails:Enumerable#first returns a gathered array from yield parameters
-fails:Enumerable#first raises a RangeError when passed a Bignum

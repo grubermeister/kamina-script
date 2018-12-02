@@ -1,2 +1,0 @@
-fails:Range#max given a block calls #> and #< on the return value of the block
-fails:Range#max raises TypeError when called on a Time...Time(excluded end point)

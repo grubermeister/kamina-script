@@ -1,1 +1,0 @@
-fails:Thread::SizedQueue#clear removes all objects from the queue

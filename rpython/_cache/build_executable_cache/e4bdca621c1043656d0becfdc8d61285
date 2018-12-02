@@ -1,0 +1,119 @@
+-+- 0
+align: 4
+size: 52
+fldofs dwFileAttributes: 0
+fldsize dwFileAttributes: 4
+fldunsigned dwFileAttributes: 1
+fldofs ftCreationTime: 4
+fldsize ftCreationTime: 8
+fldofs ftLastAccessTime: 12
+fldsize ftLastAccessTime: 8
+fldofs ftLastWriteTime: 20
+fldsize ftLastWriteTime: 8
+fldofs dwVolumeSerialNumber: 28
+fldsize dwVolumeSerialNumber: 4
+fldunsigned dwVolumeSerialNumber: 1
+fldofs nFileSizeHigh: 32
+fldsize nFileSizeHigh: 4
+fldunsigned nFileSizeHigh: 1
+fldofs nFileSizeLow: 36
+fldsize nFileSizeLow: 4
+fldunsigned nFileSizeLow: 1
+fldofs nNumberOfLinks: 40
+fldsize nNumberOfLinks: 4
+fldunsigned nNumberOfLinks: 1
+fldofs nFileIndexHigh: 44
+fldsize nFileIndexHigh: 4
+fldunsigned nFileIndexHigh: 1
+fldofs nFileIndexLow: 48
+fldsize nFileIndexLow: 4
+fldunsigned nFileIndexLow: 1
+---
+-+- 1
+value: 5
+---
+-+- 2
+value: 2
+---
+-+- 3
+value: 18
+---
+-+- 4
+value: 32
+---
+-+- 5
+value: 16
+---
+-+- 6
+value: 128
+---
+-+- 7
+value: 1
+---
+-+- 8
+value: 33554432
+---
+-+- 9
+value: 128
+---
+-+- 10
+value: 2
+---
+-+- 11
+value: 3
+---
+-+- 12
+value: 0
+---
+-+- 13
+value: 256
+---
+-+- 14
+value: 0
+---
+-+- 15
+value: 4294967295
+---
+-+- 16
+value: 1
+---
+-+- 17
+value: 3
+---
+-+- 18
+value: 0
+---
+-+- 19
+value: 2
+---
+-+- 20
+align: 4
+size: 36
+fldofs dwFileAttributes: 0
+fldsize dwFileAttributes: 4
+fldunsigned dwFileAttributes: 1
+fldofs nFileSizeHigh: 28
+fldsize nFileSizeHigh: 4
+fldunsigned nFileSizeHigh: 1
+fldofs nFileSizeLow: 32
+fldsize nFileSizeLow: 4
+fldunsigned nFileSizeLow: 1
+fldofs ftCreationTime: 4
+fldsize ftCreationTime: 8
+fldofs ftLastAccessTime: 12
+fldsize ftLastAccessTime: 8
+fldofs ftLastWriteTime: 20
+fldsize ftLastWriteTime: 8
+---
+-+- 21
+value: 8192
+---
+-+- 22
+value: 16384
+---
+-+- 23
+value: 4096
+---
+-+- 24
+value: 32768
+---

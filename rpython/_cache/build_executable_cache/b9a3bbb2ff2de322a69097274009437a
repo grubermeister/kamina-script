@@ -1,0 +1,35 @@
+-+- 0
+align: 4
+size: 36
+fldofs wProcessorArchitecture: 0
+fldsize wProcessorArchitecture: 2
+fldunsigned wProcessorArchitecture: 1
+fldofs wReserved: 2
+fldsize wReserved: 2
+fldunsigned wReserved: 1
+fldofs dwPageSize: 4
+fldsize dwPageSize: 4
+fldunsigned dwPageSize: 1
+fldofs lpMinimumApplicationAddress: 8
+fldsize lpMinimumApplicationAddress: 4
+fldofs lpMaximumApplicationAddress: 12
+fldsize lpMaximumApplicationAddress: 4
+fldofs dwActiveProcessorMask: 16
+fldsize dwActiveProcessorMask: 4
+fldunsigned dwActiveProcessorMask: 1
+fldofs dwNumberOfProcessors: 20
+fldsize dwNumberOfProcessors: 4
+fldunsigned dwNumberOfProcessors: 1
+fldofs dwProcessorType: 24
+fldsize dwProcessorType: 4
+fldunsigned dwProcessorType: 1
+fldofs dwAllocationGranularity: 28
+fldsize dwAllocationGranularity: 4
+fldunsigned dwAllocationGranularity: 1
+fldofs wProcessorLevel: 32
+fldsize wProcessorLevel: 2
+fldunsigned wProcessorLevel: 1
+fldofs wProcessorRevision: 34
+fldsize wProcessorRevision: 2
+fldunsigned wProcessorRevision: 1
+---

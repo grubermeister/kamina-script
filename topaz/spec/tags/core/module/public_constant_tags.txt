@@ -1,2 +1,0 @@
-fails:Module#public_constant accepts multiple names
-fails:Module#public_constant accepts strings as constant names

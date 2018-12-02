@@ -1,0 +1,1213 @@
+-+- 0
+defined: 0
+---
+-+- 1
+defined: 0
+---
+-+- 2
+defined: 1
+value: 16
+---
+-+- 3
+defined: 0
+---
+-+- 4
+defined: 0
+---
+-+- 5
+defined: 0
+---
+-+- 6
+defined: 0
+---
+-+- 7
+defined: 0
+---
+-+- 8
+defined: 0
+---
+-+- 9
+defined: 0
+---
+-+- 10
+defined: 1
+value: 2
+---
+-+- 11
+defined: 1
+value: 23
+---
+-+- 12
+defined: 1
+value: 6
+---
+-+- 13
+defined: 1
+value: 26
+---
+-+- 14
+defined: 0
+---
+-+- 15
+defined: 0
+---
+-+- 16
+defined: 0
+---
+-+- 17
+defined: 0
+---
+-+- 18
+defined: 0
+---
+-+- 19
+defined: 0
+---
+-+- 20
+defined: 0
+---
+-+- 21
+defined: 0
+---
+-+- 22
+defined: 0
+---
+-+- 23
+defined: 0
+---
+-+- 24
+defined: 1
+value: 11
+---
+-+- 25
+defined: 0
+---
+-+- 26
+defined: 1
+value: 0
+---
+-+- 27
+defined: 0
+---
+-+- 28
+defined: 0
+---
+-+- 29
+defined: 1
+value: 1024
+---
+-+- 30
+defined: 1
+value: 256
+---
+-+- 31
+defined: 1
+value: 2
+---
+-+- 32
+defined: 0
+---
+-+- 33
+defined: 0
+---
+-+- 34
+defined: 1
+value: 4
+---
+-+- 35
+defined: 1
+value: 8
+---
+-+- 36
+defined: 1
+value: 1
+---
+-+- 37
+defined: 1
+value: 2048
+---
+-+- 38
+defined: 0
+---
+-+- 39
+defined: 0
+---
+-+- 40
+defined: 0
+---
+-+- 41
+defined: 0
+---
+-+- 42
+defined: 1
+value: 102
+---
+-+- 43
+defined: 0
+---
+-+- 44
+defined: 1
+value: 11002
+---
+-+- 45
+defined: 1
+value: 10022
+---
+-+- 46
+defined: 0
+---
+-+- 47
+defined: 1
+value: 11003
+---
+-+- 48
+defined: 1
+value: 10047
+---
+-+- 49
+defined: 0
+---
+-+- 50
+defined: 1
+value: 8
+---
+-+- 51
+defined: 1
+value: 11001
+---
+-+- 52
+defined: 1
+value: 11001
+---
+-+- 53
+defined: 0
+---
+-+- 54
+defined: 0
+---
+-+- 55
+defined: 1
+value: 10109
+---
+-+- 56
+defined: 1
+value: 10044
+---
+-+- 57
+defined: 0
+---
+-+- 58
+defined: 1
+value: 112
+---
+-+- 59
+defined: 1
+value: 4
+---
+-+- 60
+defined: 1
+value: 113
+---
+-+- 61
+defined: 1
+value: 140
+---
+-+- 62
+defined: 1
+value: 8
+---
+-+- 63
+defined: 1
+value: 32
+---
+-+- 64
+defined: 1
+value: 5
+---
+-+- 65
+defined: 1
+value: 16
+---
+-+- 66
+defined: 1
+value: 4
+---
+-+- 67
+defined: 1
+value: 1
+---
+-+- 68
+defined: 1
+value: 64
+---
+-+- 69
+defined: 1
+value: 2
+---
+-+- 70
+defined: 1
+value: 2147772030
+---
+-+- 71
+defined: 1
+value: -1
+---
+-+- 72
+defined: 0
+---
+-+- 73
+defined: 0
+---
+-+- 74
+defined: 0
+---
+-+- 75
+defined: 1
+value: 0
+---
+-+- 76
+defined: 1
+value: 4294967295
+---
+-+- 77
+defined: 1
+value: 2130706433
+---
+-+- 78
+defined: 0
+---
+-+- 79
+defined: 1
+value: 4294967295
+---
+-+- 80
+defined: 0
+---
+-+- 81
+defined: 1
+value: 65
+---
+-+- 82
+defined: 1
+value: 22
+---
+-+- 83
+defined: 1
+value: 4294967295
+---
+-+- 84
+defined: 1
+value: 4294967295
+---
+-+- 85
+defined: 1
+value: 1024
+---
+-+- 86
+defined: 0
+---
+-+- 87
+defined: 0
+---
+-+- 88
+defined: 0
+---
+-+- 89
+defined: 0
+---
+-+- 90
+defined: 0
+---
+-+- 91
+defined: 0
+---
+-+- 92
+defined: 0
+---
+-+- 93
+defined: 0
+---
+-+- 94
+defined: 0
+---
+-+- 95
+defined: 0
+---
+-+- 96
+defined: 0
+---
+-+- 97
+defined: 0
+---
+-+- 98
+defined: 0
+---
+-+- 99
+defined: 0
+---
+-+- 100
+defined: 0
+---
+-+- 101
+defined: 0
+---
+-+- 102
+defined: 1
+value: 0
+---
+-+- 103
+defined: 0
+---
+-+- 104
+defined: 0
+---
+-+- 105
+defined: 0
+---
+-+- 106
+defined: 0
+---
+-+- 107
+defined: 0
+---
+-+- 108
+defined: 0
+---
+-+- 109
+defined: 0
+---
+-+- 110
+defined: 0
+---
+-+- 111
+defined: 0
+---
+-+- 112
+defined: 0
+---
+-+- 113
+defined: 0
+---
+-+- 114
+defined: 0
+---
+-+- 115
+defined: 0
+---
+-+- 116
+defined: 0
+---
+-+- 117
+defined: 0
+---
+-+- 118
+defined: 0
+---
+-+- 119
+defined: 0
+---
+-+- 120
+defined: 0
+---
+-+- 121
+defined: 1
+value: 26
+---
+-+- 122
+defined: 1
+value: 14
+---
+-+- 123
+defined: 0
+---
+-+- 124
+defined: 1
+value: 21
+---
+-+- 125
+defined: 1
+value: 1
+---
+-+- 126
+defined: 1
+value: 12
+---
+-+- 127
+defined: 1
+value: 13
+---
+-+- 128
+defined: 1
+value: 10
+---
+-+- 129
+defined: 1
+value: 9
+---
+-+- 130
+defined: 1
+value: 11
+---
+-+- 131
+defined: 0
+---
+-+- 132
+defined: 0
+---
+-+- 133
+defined: 1
+value: 19
+---
+-+- 134
+defined: 0
+---
+-+- 135
+defined: 0
+---
+-+- 136
+defined: 0
+---
+-+- 137
+defined: 0
+---
+-+- 138
+defined: 0
+---
+-+- 139
+defined: 1
+value: 38
+---
+-+- 140
+defined: 1
+value: 40
+---
+-+- 141
+defined: 1
+value: 32
+---
+-+- 142
+defined: 0
+---
+-+- 143
+defined: 0
+---
+-+- 144
+defined: 1
+value: 39
+---
+-+- 145
+defined: 1
+value: 4
+---
+-+- 146
+defined: 0
+---
+-+- 147
+defined: 1
+value: 27
+---
+-+- 148
+defined: 0
+---
+-+- 149
+defined: 1
+value: 12
+---
+-+- 150
+defined: 0
+---
+-+- 151
+defined: 0
+---
+-+- 152
+defined: 1
+value: 13
+---
+-+- 153
+defined: 1
+value: 2
+---
+-+- 154
+defined: 0
+---
+-+- 155
+defined: 1
+value: 9
+---
+-+- 156
+defined: 1
+value: 11
+---
+-+- 157
+defined: 1
+value: 10
+---
+-+- 158
+defined: 1
+value: 1
+---
+-+- 159
+defined: 1
+value: 25
+---
+-+- 160
+defined: 0
+---
+-+- 161
+defined: 0
+---
+-+- 162
+defined: 0
+---
+-+- 163
+defined: 1
+value: 3
+---
+-+- 164
+defined: 1
+value: 4
+---
+-+- 165
+defined: 0
+---
+-+- 166
+defined: 1
+value: 512
+---
+-+- 167
+defined: 1
+value: 4
+---
+-+- 168
+defined: 0
+---
+-+- 169
+defined: 0
+---
+-+- 170
+defined: 1
+value: 4096
+---
+-+- 171
+defined: 0
+---
+-+- 172
+defined: 1
+value: 1
+---
+-+- 173
+defined: 1
+value: 2
+---
+-+- 174
+defined: 1
+value: 256
+---
+-+- 175
+defined: 1
+value: 8
+---
+-+- 176
+defined: 0
+---
+-+- 177
+defined: 0
+---
+-+- 178
+defined: 0
+---
+-+- 179
+defined: 0
+---
+-+- 180
+defined: 0
+---
+-+- 181
+defined: 0
+---
+-+- 182
+defined: 0
+---
+-+- 183
+defined: 0
+---
+-+- 184
+defined: 0
+---
+-+- 185
+defined: 0
+---
+-+- 186
+defined: 0
+---
+-+- 187
+defined: 0
+---
+-+- 188
+defined: 0
+---
+-+- 189
+defined: 1
+value: 16
+---
+-+- 190
+defined: 1
+value: 1025
+---
+-+- 191
+defined: 1
+value: 32
+---
+-+- 192
+defined: 1
+value: 4
+---
+-+- 193
+defined: 1
+value: 1
+---
+-+- 194
+defined: 1
+value: 2
+---
+-+- 195
+defined: 1
+value: 8
+---
+-+- 196
+defined: 0
+---
+-+- 197
+defined: 0
+---
+-+- 198
+defined: 0
+---
+-+- 199
+defined: 0
+---
+-+- 200
+defined: 0
+---
+-+- 201
+defined: 0
+---
+-+- 202
+defined: 0
+---
+-+- 203
+defined: 0
+---
+-+- 204
+defined: 0
+---
+-+- 205
+defined: 0
+---
+-+- 206
+defined: 0
+---
+-+- 207
+defined: 1
+value: 1
+---
+-+- 208
+defined: 1
+value: 2
+---
+-+- 209
+defined: 1
+value: 768
+---
+-+- 210
+defined: 0
+---
+-+- 211
+defined: 1
+value: 4
+---
+-+- 212
+defined: 1
+value: 16
+---
+-+- 213
+defined: 1
+value: 1024
+---
+-+- 214
+defined: 1
+value: 512
+---
+-+- 215
+defined: 1
+value: 256
+---
+-+- 216
+defined: 0
+---
+-+- 217
+defined: 1
+value: 16
+---
+-+- 218
+value: 0
+---
+-+- 219
+value: 1
+---
+-+- 220
+value: 2
+---
+-+- 221
+defined: 0
+---
+-+- 222
+defined: 0
+---
+-+- 223
+defined: 0
+---
+-+- 224
+defined: 0
+---
+-+- 225
+defined: 0
+---
+-+- 226
+defined: 0
+---
+-+- 227
+defined: 1
+value: 2550136836
+---
+-+- 228
+defined: 1
+value: 2550136833
+---
+-+- 229
+defined: 0
+---
+-+- 230
+defined: 1
+value: 2
+---
+-+- 231
+defined: 1
+value: 3
+---
+-+- 232
+defined: 1
+value: 4
+---
+-+- 233
+defined: 1
+value: 5
+---
+-+- 234
+defined: 1
+value: 1
+---
+-+- 235
+defined: 0
+---
+-+- 236
+defined: 0
+---
+-+- 237
+defined: 0
+---
+-+- 238
+defined: 0
+---
+-+- 239
+defined: 0
+---
+-+- 240
+defined: 0
+---
+-+- 241
+defined: 1
+value: 65535
+---
+-+- 242
+defined: 0
+---
+-+- 243
+defined: 0
+---
+-+- 244
+defined: 1
+value: 2147483647
+---
+-+- 245
+defined: 1
+value: 2
+---
+-+- 246
+defined: 1
+value: 32
+---
+-+- 247
+defined: 1
+value: 1
+---
+-+- 248
+defined: 1
+value: 16
+---
+-+- 249
+defined: 1
+value: 4103
+---
+-+- 250
+defined: 1
+value: -5
+---
+-+- 251
+defined: 1
+value: 8
+---
+-+- 252
+defined: 1
+value: 128
+---
+-+- 253
+defined: 1
+value: 256
+---
+-+- 254
+defined: 1
+value: 4098
+---
+-+- 255
+defined: 1
+value: 4100
+---
+-+- 256
+defined: 1
+value: 4102
+---
+-+- 257
+defined: 1
+value: 4
+---
+-+- 258
+defined: 0
+---
+-+- 259
+defined: 1
+value: 4097
+---
+-+- 260
+defined: 1
+value: 4099
+---
+-+- 261
+defined: 1
+value: 4101
+---
+-+- 262
+defined: 1
+value: 4104
+---
+-+- 263
+defined: 1
+value: 64
+---
+-+- 264
+defined: 0
+---
+-+- 265
+defined: 0
+---
+-+- 266
+defined: 0
+---
+-+- 267
+defined: 1
+value: 16
+---
+-+- 268
+defined: 1
+value: 3
+---
+-+- 269
+defined: 1
+value: 17
+---
+-+- 270
+defined: 0
+---
+-+- 271
+defined: 1
+value: 4
+---
+-+- 272
+defined: 1
+value: 1
+---
+-+- 273
+defined: 0
+---
+-+- 274
+defined: 0
+---
+-+- 275
+defined: 0
+---
+-+- 276
+defined: 1
+---
+-+- 277
+align: 4
+size: 400
+fldofs wVersion: 0
+fldsize wVersion: 2
+fldunsigned wVersion: 1
+fldofs wHighVersion: 2
+fldsize wHighVersion: 2
+fldunsigned wHighVersion: 1
+fldofs szDescription: 4
+fldsize szDescription: 257
+fldofs szSystemStatus: 261
+fldsize szSystemStatus: 129
+fldofs iMaxSockets: 390
+fldsize iMaxSockets: 2
+fldunsigned iMaxSockets: 1
+fldofs iMaxUdpDg: 392
+fldsize iMaxUdpDg: 2
+fldunsigned iMaxUdpDg: 1
+fldofs lpVendorInfo: 396
+fldsize lpVendorInfo: 4
+---
+-+- 278
+defined: 1
+value: 10047
+---
+-+- 279
+defined: 1
+value: 10036
+---
+-+- 280
+defined: 1
+value: 10004
+---
+-+- 281
+defined: 1
+value: 10056
+---
+-+- 282
+size: 4
+---
+-+- 283
+defined: 1
+value: 10035
+---
+-+- 284
+align: 4
+size: 44
+fldofs lNetworkEvents: 0
+fldsize lNetworkEvents: 4
+fldunsigned lNetworkEvents: 0
+fldofs iErrorCode: 4
+fldsize iErrorCode: 40
+---
+-+- 285
+align: 4
+size: 372
+---
+-+- 286
+defined: 1
+value: 6
+---
+-+- 287
+defined: 1
+value: 87
+---
+-+- 288
+defined: 1
+value: 996
+---
+-+- 289
+defined: 1
+value: 997
+---
+-+- 290
+defined: 1
+value: 8
+---
+-+- 291
+defined: 1
+value: 995
+---
+-+- 292
+defined: 1
+value: 4294967295
+---
+-+- 293
+defined: 1
+value: 258
+---
+-+- 294
+align: 4
+size: 32
+fldofs ai_flags: 0
+fldsize ai_flags: 4
+fldunsigned ai_flags: 0
+fldofs ai_family: 4
+fldsize ai_family: 4
+fldunsigned ai_family: 0
+fldofs ai_socktype: 8
+fldsize ai_socktype: 4
+fldunsigned ai_socktype: 0
+fldofs ai_protocol: 12
+fldsize ai_protocol: 4
+fldunsigned ai_protocol: 0
+fldofs ai_addrlen: 16
+fldsize ai_addrlen: 4
+fldunsigned ai_addrlen: 1
+fldofs ai_addr: 24
+fldsize ai_addr: 4
+fldofs ai_canonname: 20
+fldsize ai_canonname: 4
+fldofs ai_next: 28
+fldsize ai_next: 4
+---
+-+- 295
+align: 4
+size: 16
+fldofs h_name: 0
+fldsize h_name: 4
+fldofs h_aliases: 4
+fldsize h_aliases: 4
+fldofs h_addrtype: 8
+fldsize h_addrtype: 2
+fldunsigned h_addrtype: 0
+fldofs h_length: 10
+fldsize h_length: 2
+fldunsigned h_length: 0
+fldofs h_addr_list: 12
+fldsize h_addr_list: 4
+---
+-+- 296
+align: 2
+size: 16
+fldofs s6_addr: 0
+fldsize s6_addr: 16
+---
+-+- 297
+align: 4
+size: 4
+fldofs s_addr: 0
+fldsize s_addr: 4
+fldunsigned s_addr: 1
+---
+-+- 298
+defined: 0
+---
+-+- 299
+align: 4
+size: 12
+fldofs p_proto: 8
+fldsize p_proto: 2
+fldunsigned p_proto: 0
+---
+-+- 300
+align: 4
+size: 16
+fldofs s_name: 0
+fldsize s_name: 4
+fldofs s_port: 8
+fldsize s_port: 2
+fldunsigned s_port: 0
+fldofs s_proto: 12
+fldsize s_proto: 4
+---
+-+- 301
+size: 4
+unsigned: 1
+---
+-+- 302
+align: 2
+size: 16
+fldofs sa_family: 0
+fldsize sa_family: 2
+fldunsigned sa_family: 1
+fldofs sa_data: 2
+fldsize sa_data: 14
+---
+-+- 303
+align: 4
+size: 16
+fldofs sin_family: 0
+fldsize sin_family: 2
+fldunsigned sin_family: 1
+fldofs sin_port: 2
+fldsize sin_port: 2
+fldunsigned sin_port: 1
+fldofs sin_addr: 4
+fldsize sin_addr: 4
+---
+-+- 304
+align: 4
+size: 28
+fldofs sin6_family: 0
+fldsize sin6_family: 2
+fldunsigned sin6_family: 1
+fldofs sin6_port: 2
+fldsize sin6_port: 2
+fldunsigned sin6_port: 1
+fldofs sin6_flowinfo: 4
+fldsize sin6_flowinfo: 4
+fldunsigned sin6_flowinfo: 1
+fldofs sin6_addr: 8
+fldsize sin6_addr: 16
+fldofs sin6_scope_id: 24
+fldsize sin6_scope_id: 4
+fldunsigned sin6_scope_id: 1
+---
+-+- 305
+defined: 0
+---
+-+- 306
+defined: 0
+---
+-+- 307
+size: 4
+unsigned: 0
+---
+-+- 308
+size: 4
+unsigned: 0
+---
+-+- 309
+align: 4
+size: 12
+fldofs onoff: 0
+fldsize onoff: 4
+fldunsigned onoff: 1
+fldofs keepalivetime: 4
+fldsize keepalivetime: 4
+fldunsigned keepalivetime: 1
+fldofs keepaliveinterval: 8
+fldsize keepaliveinterval: 4
+fldunsigned keepaliveinterval: 1
+---
+-+- 310
+align: 4
+size: 8
+fldofs tv_sec: 0
+fldsize tv_sec: 4
+fldunsigned tv_sec: 0
+fldofs tv_usec: 4
+fldsize tv_usec: 4
+fldunsigned tv_usec: 0
+---
+-+- 311
+size: 2
+unsigned: 1
+---
+-+- 312
+size: 4
+unsigned: 1
+---

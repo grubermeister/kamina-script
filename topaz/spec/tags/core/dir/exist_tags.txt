@@ -1,1 +1,0 @@
-fails:Dir.exist? doesn't require the name to have a trailing slash

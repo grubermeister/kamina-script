@@ -4,7 +4,7 @@ from pypy.module.sys import initpath
 from pypy.module._frozen_importlib import interp_import
 
 lib_python = os.path.join(os.path.dirname(__file__),
-                          '..', '..', '..', 'lib-python', '3')
+                          '..', '..', 'lib-python', '3')
 
 class Module(MixedModule):
     interpleveldefs = {

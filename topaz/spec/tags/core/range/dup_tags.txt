@@ -1,1 +1,0 @@
-fails:Range#dup duplicates the range

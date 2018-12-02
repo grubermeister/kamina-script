@@ -1,0 +1,121 @@
+-+- 0
+defined: 1
+value: 127
+---
+-+- 1
+defined: 0
+---
+-+- 2
+defined: 1
+value: 0
+---
+-+- 3
+defined: 1
+value: 1
+---
+-+- 4
+defined: 1
+value: 2
+---
+-+- 5
+defined: 0
+---
+-+- 6
+defined: 1
+value: 5
+---
+-+- 7
+defined: 0
+---
+-+- 8
+defined: 0
+---
+-+- 9
+defined: 1
+value: 0
+---
+-+- 10
+defined: 1
+value: 3
+---
+-+- 11
+defined: 0
+---
+-+- 12
+defined: 1
+value: 4
+---
+-+- 13
+defined: 0
+---
+-+- 14
+defined: 0
+---
+-+- 15
+defined: 1
+value: 5
+---
+-+- 16
+defined: 1
+value: 9
+---
+-+- 17
+defined: 1
+value: 90
+---
+-+- 18
+defined: 1
+value: 89
+---
+-+- 19
+defined: 1
+value: 1024
+---
+-+- 20
+align: 4
+size: 80
+fldofs decimal_point: 0
+fldsize decimal_point: 4
+fldofs thousands_sep: 4
+fldsize thousands_sep: 4
+fldofs grouping: 8
+fldsize grouping: 4
+fldofs int_curr_symbol: 12
+fldsize int_curr_symbol: 4
+fldofs currency_symbol: 16
+fldsize currency_symbol: 4
+fldofs mon_decimal_point: 20
+fldsize mon_decimal_point: 4
+fldofs mon_thousands_sep: 24
+fldsize mon_thousands_sep: 4
+fldofs mon_grouping: 28
+fldsize mon_grouping: 4
+fldofs positive_sign: 32
+fldsize positive_sign: 4
+fldofs negative_sign: 36
+fldsize negative_sign: 4
+fldofs int_frac_digits: 40
+fldsize int_frac_digits: 1
+fldunsigned int_frac_digits: 0
+fldofs frac_digits: 41
+fldsize frac_digits: 1
+fldunsigned frac_digits: 0
+fldofs p_cs_precedes: 42
+fldsize p_cs_precedes: 1
+fldunsigned p_cs_precedes: 0
+fldofs p_sep_by_space: 43
+fldsize p_sep_by_space: 1
+fldunsigned p_sep_by_space: 0
+fldofs n_cs_precedes: 44
+fldsize n_cs_precedes: 1
+fldunsigned n_cs_precedes: 0
+fldofs n_sep_by_space: 45
+fldsize n_sep_by_space: 1
+fldunsigned n_sep_by_space: 0
+fldofs p_sign_posn: 46
+fldsize p_sign_posn: 1
+fldunsigned p_sign_posn: 0
+fldofs n_sign_posn: 47
+fldsize n_sign_posn: 1
+fldunsigned n_sign_posn: 0
+---

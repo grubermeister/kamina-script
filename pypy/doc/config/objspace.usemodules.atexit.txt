@@ -1,2 +1,0 @@
-Use the 'atexit' module.
-Allow programmer to define multiple exit functions to be executed upon normal program termination.

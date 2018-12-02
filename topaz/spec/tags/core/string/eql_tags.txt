@@ -1,3 +1,0 @@
-fails:String#eql? ignores encoding difference of compatible string
-fails:String#eql? considers encoding difference of incompatible string
-fails:String#eql? considers encoding compatibility

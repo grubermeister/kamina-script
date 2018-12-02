@@ -1,2 +1,0 @@
-fails:Set#inspect returns a String representation of self
-fails:Set#inspect correctly handles self-references

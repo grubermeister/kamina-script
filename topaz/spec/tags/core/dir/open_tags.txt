@@ -1,1 +1,0 @@
-fails:Dir.open calls #to_hash to convert the options object

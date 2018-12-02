@@ -1,2 +1,0 @@
-fails:String#* returns subclass instances
-fails:String#* returns a String in the same encoding as self

@@ -1,1 +1,0 @@
-fails:Thread::Queue#clear removes all objects from the queue

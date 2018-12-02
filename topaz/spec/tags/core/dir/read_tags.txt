@@ -1,3 +1,0 @@
-fails:Dir#read returns the file name in the current seek position
-fails:Dir#read returns nil when there are no more entries
-fails:Dir#read returns each entry successively

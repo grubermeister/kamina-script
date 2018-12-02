@@ -1,2 +1,0 @@
-fails:Thread#backtrace returns the current backtrace of a thread
-fails:Thread#backtrace returns nil for dead thread

@@ -1,1 +1,0 @@
-fails:Enumerable#sort doesn't raise an error if #to_a returns a frozen Array

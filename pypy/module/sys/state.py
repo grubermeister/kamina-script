@@ -21,7 +21,7 @@ class State:
         from pypy.module.sys.initpath import compute_stdlib_path
         # This initial value for sys.prefix is normally overwritten
         # at runtime by initpath.py
-        srcdir = os.path.dirname(pypydir)
+        srcdir = pypydir
         self.w_initial_prefix = space.newtext(srcdir)
         # Initialize the default path
         path = compute_stdlib_path(self, srcdir)

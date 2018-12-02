@@ -1,2 +1,0 @@
-fails:A Proc taking |a, | arguments raises an ArgumentError when passed more than one value
-fails:A Proc taking |(a, b)| arguments raises a TypeError if #to_ary does not return an Array

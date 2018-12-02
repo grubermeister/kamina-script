@@ -1,3 +1,0 @@
-fails:Complex#marshal_dump dumps real and imaginary parts
-fails:Complex#marshal_dump is a public method
-fails:Complex#marshal_dump is a private method

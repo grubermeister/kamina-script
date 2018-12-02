@@ -1,2 +1,0 @@
-fails:ARGF.argv returns ARGV for the initial ARGF
-fails:ARGF.argv returns the remaining arguments to treat

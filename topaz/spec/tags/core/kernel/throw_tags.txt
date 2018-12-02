@@ -1,3 +1,0 @@
-fails:Kernel#throw is a private method
-fails:Kernel.throw raises an UncaughtThrowError if there is no catch block for the symbol
-fails:Kernel.throw can throw an object

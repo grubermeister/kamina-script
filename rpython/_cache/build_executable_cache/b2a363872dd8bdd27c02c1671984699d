@@ -1,0 +1,760 @@
+-+- 0
+defined: 1
+value: 7
+---
+-+- 1
+defined: 1
+value: 13
+---
+-+- 2
+defined: 1
+value: 100
+---
+-+- 3
+defined: 1
+value: 101
+---
+-+- 4
+defined: 0
+---
+-+- 5
+defined: 1
+value: 102
+---
+-+- 6
+defined: 1
+value: 11
+---
+-+- 7
+defined: 1
+value: 103
+---
+-+- 8
+defined: 0
+---
+-+- 9
+defined: 0
+---
+-+- 10
+defined: 0
+---
+-+- 11
+defined: 0
+---
+-+- 12
+defined: 1
+value: 9
+---
+-+- 13
+defined: 0
+---
+-+- 14
+defined: 0
+---
+-+- 15
+defined: 1
+value: 104
+---
+-+- 16
+defined: 0
+---
+-+- 17
+defined: 0
+---
+-+- 18
+defined: 0
+---
+-+- 19
+defined: 0
+---
+-+- 20
+defined: 0
+---
+-+- 21
+defined: 1
+value: 16
+---
+-+- 22
+defined: 1
+value: 105
+---
+-+- 23
+defined: 1
+value: 10
+---
+-+- 24
+defined: 0
+---
+-+- 25
+defined: 0
+---
+-+- 26
+defined: 1
+value: 106
+---
+-+- 27
+defined: 1
+value: 107
+---
+-+- 28
+defined: 1
+value: 108
+---
+-+- 29
+defined: 1
+value: 36
+---
+-+- 30
+defined: 1
+value: 36
+---
+-+- 31
+defined: 1
+value: 109
+---
+-+- 32
+defined: 0
+---
+-+- 33
+defined: 1
+value: 33
+---
+-+- 34
+defined: 0
+---
+-+- 35
+defined: 0
+---
+-+- 36
+defined: 1
+value: 17
+---
+-+- 37
+defined: 1
+value: 14
+---
+-+- 38
+defined: 1
+value: 27
+---
+-+- 39
+defined: 0
+---
+-+- 40
+defined: 0
+---
+-+- 41
+defined: 1
+value: 110
+---
+-+- 42
+defined: 1
+value: 111
+---
+-+- 43
+defined: 1
+value: 42
+---
+-+- 44
+defined: 1
+value: 112
+---
+-+- 45
+defined: 1
+value: 4
+---
+-+- 46
+defined: 1
+value: 22
+---
+-+- 47
+defined: 1
+value: 5
+---
+-+- 48
+defined: 1
+value: 113
+---
+-+- 49
+defined: 1
+value: 21
+---
+-+- 50
+defined: 0
+---
+-+- 51
+defined: 0
+---
+-+- 52
+defined: 0
+---
+-+- 53
+defined: 0
+---
+-+- 54
+defined: 0
+---
+-+- 55
+defined: 0
+---
+-+- 56
+defined: 0
+---
+-+- 57
+defined: 0
+---
+-+- 58
+defined: 0
+---
+-+- 59
+defined: 0
+---
+-+- 60
+defined: 0
+---
+-+- 61
+defined: 0
+---
+-+- 62
+defined: 0
+---
+-+- 63
+defined: 0
+---
+-+- 64
+defined: 0
+---
+-+- 65
+defined: 1
+value: 114
+---
+-+- 66
+defined: 0
+---
+-+- 67
+defined: 1
+value: 24
+---
+-+- 68
+defined: 1
+value: 31
+---
+-+- 69
+defined: 1
+value: 115
+---
+-+- 70
+defined: 0
+---
+-+- 71
+defined: 1
+value: 38
+---
+-+- 72
+defined: 0
+---
+-+- 73
+defined: 0
+---
+-+- 74
+defined: 1
+value: 116
+---
+-+- 75
+defined: 1
+value: 117
+---
+-+- 76
+defined: 1
+value: 118
+---
+-+- 77
+defined: 1
+value: 23
+---
+-+- 78
+defined: 0
+---
+-+- 79
+defined: 0
+---
+-+- 80
+defined: 1
+value: 119
+---
+-+- 81
+defined: 0
+---
+-+- 82
+defined: 1
+value: 120
+---
+-+- 83
+defined: 1
+value: 19
+---
+-+- 84
+defined: 1
+value: 2
+---
+-+- 85
+defined: 1
+value: 8
+---
+-+- 86
+defined: 0
+---
+-+- 87
+defined: 1
+value: 39
+---
+-+- 88
+defined: 1
+value: 121
+---
+-+- 89
+defined: 0
+---
+-+- 90
+defined: 1
+value: 12
+---
+-+- 91
+defined: 1
+value: 122
+---
+-+- 92
+defined: 0
+---
+-+- 93
+defined: 0
+---
+-+- 94
+defined: 0
+---
+-+- 95
+defined: 1
+value: 123
+---
+-+- 96
+defined: 1
+value: 28
+---
+-+- 97
+defined: 1
+value: 124
+---
+-+- 98
+defined: 1
+value: 125
+---
+-+- 99
+defined: 1
+value: 40
+---
+-+- 100
+defined: 0
+---
+-+- 101
+defined: 0
+---
+-+- 102
+defined: 1
+value: 126
+---
+-+- 103
+defined: 1
+value: 20
+---
+-+- 104
+defined: 1
+value: 41
+---
+-+- 105
+defined: 0
+---
+-+- 106
+defined: 1
+value: 127
+---
+-+- 107
+defined: 1
+value: 128
+---
+-+- 108
+defined: 1
+value: 129
+---
+-+- 109
+defined: 1
+value: 25
+---
+-+- 110
+defined: 0
+---
+-+- 111
+defined: 1
+value: 6
+---
+-+- 112
+defined: 1
+value: 130
+---
+-+- 113
+defined: 1
+value: 132
+---
+-+- 114
+defined: 1
+value: 133
+---
+-+- 115
+defined: 1
+value: 1
+---
+-+- 116
+defined: 0
+---
+-+- 117
+defined: 1
+value: 32
+---
+-+- 118
+defined: 0
+---
+-+- 119
+defined: 0
+---
+-+- 120
+defined: 0
+---
+-+- 121
+defined: 0
+---
+-+- 122
+defined: 1
+value: 134
+---
+-+- 123
+defined: 1
+value: 135
+---
+-+- 124
+defined: 1
+value: 136
+---
+-+- 125
+defined: 0
+---
+-+- 126
+defined: 1
+value: 34
+---
+-+- 127
+defined: 0
+---
+-+- 128
+defined: 0
+---
+-+- 129
+defined: 0
+---
+-+- 130
+defined: 0
+---
+-+- 131
+defined: 0
+---
+-+- 132
+defined: 1
+value: 30
+---
+-+- 133
+defined: 0
+---
+-+- 134
+defined: 0
+---
+-+- 135
+defined: 0
+---
+-+- 136
+defined: 0
+---
+-+- 137
+defined: 1
+value: 29
+---
+-+- 138
+defined: 1
+value: 3
+---
+-+- 139
+defined: 0
+---
+-+- 140
+defined: 0
+---
+-+- 141
+defined: 0
+---
+-+- 142
+defined: 1
+value: 137
+---
+-+- 143
+defined: 1
+value: 138
+---
+-+- 144
+defined: 0
+---
+-+- 145
+defined: 1
+value: 139
+---
+-+- 146
+defined: 0
+---
+-+- 147
+defined: 0
+---
+-+- 148
+defined: 0
+---
+-+- 149
+defined: 1
+value: 140
+---
+-+- 150
+defined: 1
+value: 18
+---
+-+- 151
+defined: 0
+---
+-+- 152
+defined: 1
+value: 10000
+---
+-+- 153
+defined: 0
+---
+-+- 154
+defined: 1
+value: 10013
+---
+-+- 155
+defined: 1
+value: 10048
+---
+-+- 156
+defined: 1
+value: 10049
+---
+-+- 157
+defined: 1
+value: 10047
+---
+-+- 158
+defined: 1
+value: 10037
+---
+-+- 159
+defined: 1
+value: 10009
+---
+-+- 160
+defined: 1
+value: 10053
+---
+-+- 161
+defined: 1
+value: 10061
+---
+-+- 162
+defined: 1
+value: 10054
+---
+-+- 163
+defined: 1
+value: 10039
+---
+-+- 164
+defined: 1
+value: 10101
+---
+-+- 165
+defined: 1
+value: 10069
+---
+-+- 166
+defined: 1
+value: 10014
+---
+-+- 167
+defined: 1
+value: 10064
+---
+-+- 168
+defined: 1
+value: 10065
+---
+-+- 169
+defined: 1
+value: 10036
+---
+-+- 170
+defined: 1
+value: 10004
+---
+-+- 171
+defined: 1
+value: 10022
+---
+-+- 172
+defined: 1
+value: 10056
+---
+-+- 173
+defined: 1
+value: 10062
+---
+-+- 174
+defined: 1
+value: 10024
+---
+-+- 175
+defined: 1
+value: 10040
+---
+-+- 176
+defined: 1
+value: 10063
+---
+-+- 177
+defined: 1
+value: 10050
+---
+-+- 178
+defined: 1
+value: 10052
+---
+-+- 179
+defined: 1
+value: 10051
+---
+-+- 180
+defined: 1
+value: 10055
+---
+-+- 181
+defined: 1
+value: 10042
+---
+-+- 182
+defined: 1
+value: 10057
+---
+-+- 183
+defined: 1
+value: 10066
+---
+-+- 184
+defined: 1
+value: 10038
+---
+-+- 185
+defined: 1
+value: 10045
+---
+-+- 186
+defined: 1
+value: 10046
+---
+-+- 187
+defined: 1
+value: 10067
+---
+-+- 188
+defined: 1
+value: 10043
+---
+-+- 189
+defined: 1
+value: 10041
+---
+-+- 190
+defined: 1
+value: 10071
+---
+-+- 191
+defined: 1
+value: 10058
+---
+-+- 192
+defined: 1
+value: 10044
+---
+-+- 193
+defined: 1
+value: 10070
+---
+-+- 194
+defined: 1
+value: 10060
+---
+-+- 195
+defined: 1
+value: 10059
+---
+-+- 196
+defined: 1
+value: 10068
+---
+-+- 197
+defined: 1
+value: 10035
+---
+-+- 198
+defined: 0
+---
+-+- 199
+defined: 0
+---
+-+- 200
+defined: 0
+---
+-+- 201
+defined: 0
+---
+-+- 202
+defined: 0
+---
+-+- 203
+defined: 0
+---
+-+- 204
+defined: 0
+---
+-+- 205
+defined: 0
+---
+-+- 206
+defined: 1
+value: 10093
+---
+-+- 207
+defined: 0
+---
+-+- 208
+defined: 1
+value: 10091
+---
+-+- 209
+defined: 0
+---
+-+- 210
+defined: 1
+value: 10092
+---

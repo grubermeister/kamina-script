@@ -1,3 +1,0 @@
-fails:Numeric#fdiv coerces self with #to_f
-fails:Numeric#fdiv returns a Float
-fails:Numeric#fdiv returns Infinity if other is 0

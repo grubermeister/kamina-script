@@ -1,1 +1,0 @@
-fails:File.lstat returns a File::Stat object when called on an instance of File

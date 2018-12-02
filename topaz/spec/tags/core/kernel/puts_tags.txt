@@ -1,1 +1,0 @@
-fails:Kernel#puts writes [...] for a recursive array arg

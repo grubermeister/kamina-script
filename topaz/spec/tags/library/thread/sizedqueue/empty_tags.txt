@@ -1,2 +1,0 @@
-fails:Thread::SizedQueue#empty? returns true on an empty Queue
-fails:Thread::SizedQueue#empty? returns false when Queue is not empty

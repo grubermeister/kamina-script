@@ -1,2 +1,0 @@
-fails:Float#/ properly coerces objects
-fails:Float#/ raises a TypeError when given a non-Numeric
